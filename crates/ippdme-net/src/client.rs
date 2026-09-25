@@ -1,0 +1,155 @@
+//! Async TCP client for the I++ DME protocol: automatic tag generation,
+//! request/response correlation, timeouts, and a broadcast stream of every
+//! inbound message (for live inspection, e.g. the TUI).
+
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use futures::{SinkExt, StreamExt};
+use ippdme_core::{Command, CoordSystem, Message, Point, Tag, Term};
+use tokio::net::{TcpStream, ToSocketAddrs};
+use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::time::timeout;
+use tokio_util::codec::Framed;
+
+use crate::codec::MessageCodec;
+use crate::error::{NetError, Result};
+
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
+const EVENT_BUFFER: usize = 1024;
+
+type PendingMap = Arc<Mutex<HashMap<Tag, oneshot::Sender<Message>>>>;
+
+/// An async client connection to an I++ DME server (a real CMM/gateway, or
+/// [`crate::mock::IppMockServer`]).
+pub struct IppClient {
+    write_tx: mpsc::UnboundedSender<Message>,
+    pending: PendingMap,
+    next_tag: Arc<AtomicU32>,
+    events: broadcast::Sender<Message>,
+    default_timeout: Duration,
+}
+
+impl IppClient {
+    /// Connect to `addr` (e.g. `"127.0.0.1:1294"`) and spawn the background
+    /// read/write tasks.
+    pub async fn connect(addr: impl ToSocketAddrs) -> Result<Self> {
+        let stream = TcpStream::connect(addr).await?;
+        Ok(Self::from_stream(stream))
+    }
+
+    /// Wrap an already-connected [`TcpStream`], e.g. for tests against a
+    /// loopback [`crate::mock::IppMockServer`].
+    pub fn from_stream(stream: TcpStream) -> Self {
+        let framed = Framed::new(stream, MessageCodec);
+        let (mut sink, mut stream) = framed.split();
+
+        let (write_tx, mut write_rx) = mpsc::unbounded_channel::<Message>();
+        let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
+        let (events, _) = broadcast::channel(EVENT_BUFFER);
+
+        tokio::spawn(async move {
+            while let Some(msg) = write_rx.recv().await {
+                if sink.send(msg).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        let pending_reader = pending.clone();
+        let events_reader = events.clone();
+        tokio::spawn(async move {
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(msg) => {
+                        let _ = events_reader.send(msg.clone());
+                        if let Message::Response { tag, .. } = &msg {
+                            if let Some(tx) = pending_reader.lock().unwrap().remove(tag) {
+                                let _ = tx.send(msg);
+                            }
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        IppClient {
+            write_tx,
+            pending,
+            next_tag: Arc::new(AtomicU32::new(1)),
+            events,
+            default_timeout: DEFAULT_TIMEOUT,
+        }
+    }
+
+    pub fn set_default_timeout(&mut self, d: Duration) {
+        self.default_timeout = d;
+    }
+
+    /// Subscribe to every inbound message (responses and events) as they
+    /// arrive, for live inspection independent of request/response pairing.
+    pub fn subscribe(&self) -> broadcast::Receiver<Message> {
+        self.events.subscribe()
+    }
+
+    fn next_tag(&self) -> Tag {
+        Tag::new(self.next_tag.fetch_add(1, Ordering::Relaxed))
+    }
+
+    /// Send a raw [`Term`] as a command and await its correlated response.
+    pub async fn send(&self, term: Term) -> Result<Message> {
+        let tag = self.next_tag();
+        let (tx, rx) = oneshot::channel();
+        self.pending.lock().unwrap().insert(tag, tx);
+
+        let message = Message::Command { tag, term };
+        if self.write_tx.send(message).is_err() {
+            self.pending.lock().unwrap().remove(&tag);
+            return Err(NetError::ConnectionClosed);
+        }
+
+        match timeout(self.default_timeout, rx).await {
+            Ok(Ok(response)) => Ok(response),
+            Ok(Err(_)) => Err(NetError::ConnectionClosed),
+            Err(_) => {
+                self.pending.lock().unwrap().remove(&tag);
+                Err(NetError::Timeout(tag))
+            }
+        }
+    }
+
+    pub async fn send_command(&self, cmd: Command) -> Result<Message> {
+        self.send(cmd.into()).await
+    }
+
+    pub async fn start_session(&self) -> Result<Message> {
+        self.send_command(Command::StartSession).await
+    }
+
+    pub async fn end_session(&self) -> Result<Message> {
+        self.send_command(Command::EndSession).await
+    }
+
+    pub async fn get_dme_version(&self) -> Result<Message> {
+        self.send_command(Command::GetDmeVersion).await
+    }
+
+    pub async fn home(&self) -> Result<Message> {
+        self.send_command(Command::Home).await
+    }
+
+    pub async fn go_to(&self, x: f64, y: f64, z: f64) -> Result<Message> {
+        self.send_command(Command::GoTo(Point::xyz(x, y, z))).await
+    }
+
+    pub async fn pt_meas(&self) -> Result<Message> {
+        self.send_command(Command::PtMeas(Point::default())).await
+    }
+
+    pub async fn set_coord_system(&self, cs: CoordSystem) -> Result<Message> {
+        self.send_command(Command::SetCoordSystem(cs)).await
+    }
+}
