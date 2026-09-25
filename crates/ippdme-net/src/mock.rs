@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
-use ippdme_core::{response, Command, Message, Point, Tag};
+use ippdme_core::{response, Command, CsyTransform, Message, Point, Tag};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio_util::codec::Framed;
 use tracing::{debug, warn};
@@ -154,6 +154,39 @@ async fn handle_command(tag: Tag, cmd: Command) -> Message {
             response::data(tag, ippdme_core::Term::call("Get", args))
         }
         Command::OnPtMeasReport(_) | Command::OnMoveReportE(_) => response::ack(tag),
+
+        Command::GetCoordSystem => {
+            let term = ippdme_core::Term::Call(
+                "CoordSystem".into(),
+                vec![ippdme_core::Term::Ident("PartCsy".into())],
+            );
+            response::data(tag, term)
+        }
+        Command::GetCsyTransformation(_) => {
+            let identity = CsyTransform::default();
+            let term = ippdme_core::Term::Call(
+                "GetCsyTransformation".into(),
+                vec![
+                    ippdme_core::Term::Number(identity.x0),
+                    ippdme_core::Term::Number(identity.y0),
+                    ippdme_core::Term::Number(identity.z0),
+                    ippdme_core::Term::Number(identity.theta),
+                    ippdme_core::Term::Number(identity.psi),
+                    ippdme_core::Term::Number(identity.phi),
+                ],
+            );
+            response::data(tag, term)
+        }
+        Command::SetCsyTransformation(..) => response::ack(tag),
+        Command::SaveActiveCoordSystem(_) | Command::LoadCoordSystem(_) => response::ack(tag),
+        Command::DeleteCoordSystem(_) => response::ack(tag),
+        Command::EnumCoordSystems => {
+            response::data(tag, ippdme_core::Term::unit("EnumCoordSystems"))
+        }
+        Command::GetNamedCsyTransformation(_) => {
+            response::data(tag, ippdme_core::Term::unit("GetNamedCsyTransformation"))
+        }
+        Command::SaveNamedCsyTransformation(..) => response::ack(tag),
 
         Command::Raw(_) => response::error(tag, "UnknownCommand"),
     }

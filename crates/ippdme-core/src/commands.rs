@@ -24,6 +24,97 @@ impl CoordSystem {
     }
 }
 
+/// The coordinate systems selectable via `GetCsyTransformation`/
+/// `SetCsyTransformation` (spec 6.3.3.3 / 6.3.3.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum CsyTransformKind {
+    PartCsy,
+    JogDisplayCsy,
+    JogMoveCsy,
+    SensorCsy,
+    MoveableMachineCsy,
+    MultipleArmCsy,
+}
+
+impl CsyTransformKind {
+    fn as_ident(&self) -> &'static str {
+        match self {
+            CsyTransformKind::PartCsy => "PartCsy",
+            CsyTransformKind::JogDisplayCsy => "JogDisplayCsy",
+            CsyTransformKind::JogMoveCsy => "JogMoveCsy",
+            CsyTransformKind::SensorCsy => "SensorCsy",
+            CsyTransformKind::MoveableMachineCsy => "MoveableMachineCsy",
+            CsyTransformKind::MultipleArmCsy => "MultipleArmCsy",
+        }
+    }
+
+    fn from_ident(s: &str) -> Option<Self> {
+        Some(match s {
+            "PartCsy" => CsyTransformKind::PartCsy,
+            "JogDisplayCsy" => CsyTransformKind::JogDisplayCsy,
+            "JogMoveCsy" => CsyTransformKind::JogMoveCsy,
+            "SensorCsy" => CsyTransformKind::SensorCsy,
+            "MoveableMachineCsy" => CsyTransformKind::MoveableMachineCsy,
+            "MultipleArmCsy" => CsyTransformKind::MultipleArmCsy,
+            _ => return None,
+        })
+    }
+}
+
+/// The `(X0, Y0, Z0, Theta, Psi, Phi)` Euler-angle transformation of a
+/// coordinate system relative to the machine coordinate system (spec 6.3.3,
+/// "Transformation chain").
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct CsyTransform {
+    pub x0: f64,
+    pub y0: f64,
+    pub z0: f64,
+    pub theta: f64,
+    pub psi: f64,
+    pub phi: f64,
+}
+
+impl CsyTransform {
+    pub fn new(x0: f64, y0: f64, z0: f64, theta: f64, psi: f64, phi: f64) -> Self {
+        CsyTransform {
+            x0,
+            y0,
+            z0,
+            theta,
+            psi,
+            phi,
+        }
+    }
+
+    fn to_args(self) -> Vec<Term> {
+        vec![
+            Term::Number(self.x0),
+            Term::Number(self.y0),
+            Term::Number(self.z0),
+            Term::Number(self.theta),
+            Term::Number(self.psi),
+            Term::Number(self.phi),
+        ]
+    }
+
+    fn from_terms(terms: &[Term]) -> Option<Self> {
+        let n = |t: &Term| match t {
+            Term::Number(v) => Some(*v),
+            _ => None,
+        };
+        Some(CsyTransform {
+            x0: n(terms.first()?)?,
+            y0: n(terms.get(1)?)?,
+            z0: n(terms.get(2)?)?,
+            theta: n(terms.get(3)?)?,
+            psi: n(terms.get(4)?)?,
+            phi: n(terms.get(5)?)?,
+        })
+    }
+}
+
 /// A point in 3D space with an optional surface normal vector, used by
 /// [`Command::GoTo`] and [`Command::PtMeas`].
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -132,6 +223,20 @@ pub enum Command {
     /// Start a daemon reporting machine position while it moves.
     OnMoveReportE(Vec<Term>),
 
+    // --- CartCMM methods (spec 6.3.3) ---
+    GetCoordSystem,
+    GetCsyTransformation(CsyTransformKind),
+    SetCsyTransformation(CsyTransformKind, CsyTransform),
+    /// Save the currently active work piece coordinate system under a name.
+    SaveActiveCoordSystem(String),
+    /// Load a previously saved work piece coordinate system by name and make
+    /// it the active one.
+    LoadCoordSystem(String),
+    DeleteCoordSystem(String),
+    EnumCoordSystems,
+    GetNamedCsyTransformation(String),
+    SaveNamedCsyTransformation(String, CsyTransform),
+
     /// Any command not covered by a typed variant above.
     Raw(Term),
 }
@@ -183,6 +288,33 @@ impl From<Command> for Term {
             Command::Get(args) => Term::call("Get", args),
             Command::OnPtMeasReport(args) => Term::call("OnPtMeasReport", args),
             Command::OnMoveReportE(args) => Term::call("OnMoveReportE", args),
+
+            Command::GetCoordSystem => Term::unit("GetCoordSystem"),
+            Command::GetCsyTransformation(kind) => Term::call(
+                "GetCsyTransformation",
+                vec![Term::Ident(kind.as_ident().to_string())],
+            ),
+            Command::SetCsyTransformation(kind, xform) => {
+                let mut args = vec![Term::Ident(kind.as_ident().to_string())];
+                args.extend(xform.to_args());
+                Term::call("SetCsyTransformation", args)
+            }
+            Command::SaveActiveCoordSystem(name) => {
+                Term::call("SaveActiveCoordSystem", vec![Term::Str(name)])
+            }
+            Command::LoadCoordSystem(name) => Term::call("LoadCoordSystem", vec![Term::Str(name)]),
+            Command::DeleteCoordSystem(name) => {
+                Term::call("DeleteCoordSystem", vec![Term::Str(name)])
+            }
+            Command::EnumCoordSystems => Term::unit("EnumCoordSystems"),
+            Command::GetNamedCsyTransformation(name) => {
+                Term::call("GetNamedCsyTransformation", vec![Term::Str(name)])
+            }
+            Command::SaveNamedCsyTransformation(name, xform) => {
+                let mut args = vec![Term::Str(name)];
+                args.extend(xform.to_args());
+                Term::call("SaveNamedCsyTransformation", args)
+            }
 
             Command::Raw(t) => t,
         }
@@ -273,6 +405,116 @@ impl TryFrom<&Term> for Command {
             "OnPtMeasReport" => Command::OnPtMeasReport(term.args().to_vec()),
             "OnMoveReportE" => Command::OnMoveReportE(term.args().to_vec()),
 
+            "GetCoordSystem" => Command::GetCoordSystem,
+            "GetCsyTransformation" => {
+                let kind = term.args().first().and_then(|t| match t {
+                    Term::Ident(s) => CsyTransformKind::from_ident(s),
+                    _ => None,
+                });
+                match kind {
+                    Some(kind) => Command::GetCsyTransformation(kind),
+                    None => {
+                        return Err(IppError::WrongArgType {
+                            func: "GetCsyTransformation".into(),
+                            name: "enumerator".into(),
+                        })
+                    }
+                }
+            }
+            "SetCsyTransformation" => {
+                let args = term.args();
+                let kind = args.first().and_then(|t| match t {
+                    Term::Ident(s) => CsyTransformKind::from_ident(s),
+                    _ => None,
+                });
+                match (kind, CsyTransform::from_terms(args.get(1..).unwrap_or(&[]))) {
+                    (Some(kind), Some(xform)) => Command::SetCsyTransformation(kind, xform),
+                    _ => {
+                        return Err(IppError::WrongArgType {
+                            func: "SetCsyTransformation".into(),
+                            name: "enumerator/transform".into(),
+                        })
+                    }
+                }
+            }
+            "SaveActiveCoordSystem" => {
+                let name = term.args().first().and_then(|t| match t {
+                    Term::Str(s) => Some(s.clone()),
+                    _ => None,
+                });
+                match name {
+                    Some(name) => Command::SaveActiveCoordSystem(name),
+                    None => {
+                        return Err(IppError::WrongArgType {
+                            func: "SaveActiveCoordSystem".into(),
+                            name: "name".into(),
+                        })
+                    }
+                }
+            }
+            "LoadCoordSystem" => {
+                let name = term.args().first().and_then(|t| match t {
+                    Term::Str(s) => Some(s.clone()),
+                    _ => None,
+                });
+                match name {
+                    Some(name) => Command::LoadCoordSystem(name),
+                    None => {
+                        return Err(IppError::WrongArgType {
+                            func: "LoadCoordSystem".into(),
+                            name: "name".into(),
+                        })
+                    }
+                }
+            }
+            "DeleteCoordSystem" => {
+                let name = term.args().first().and_then(|t| match t {
+                    Term::Str(s) => Some(s.clone()),
+                    _ => None,
+                });
+                match name {
+                    Some(name) => Command::DeleteCoordSystem(name),
+                    None => {
+                        return Err(IppError::WrongArgType {
+                            func: "DeleteCoordSystem".into(),
+                            name: "name".into(),
+                        })
+                    }
+                }
+            }
+            "EnumCoordSystems" => Command::EnumCoordSystems,
+            "GetNamedCsyTransformation" => {
+                let name = term.args().first().and_then(|t| match t {
+                    Term::Str(s) => Some(s.clone()),
+                    _ => None,
+                });
+                match name {
+                    Some(name) => Command::GetNamedCsyTransformation(name),
+                    None => {
+                        return Err(IppError::WrongArgType {
+                            func: "GetNamedCsyTransformation".into(),
+                            name: "name".into(),
+                        })
+                    }
+                }
+            }
+            "SaveNamedCsyTransformation" => {
+                let args = term.args();
+                let name = args.first().and_then(|t| match t {
+                    Term::Str(s) => Some(s.clone()),
+                    _ => None,
+                });
+                match (name, CsyTransform::from_terms(args.get(1..).unwrap_or(&[]))) {
+                    (Some(name), Some(xform)) => Command::SaveNamedCsyTransformation(name, xform),
+                    _ => {
+                        return Err(IppError::WrongArgType {
+                            func: "SaveNamedCsyTransformation".into(),
+                            name: "name/transform".into(),
+                        })
+                    }
+                }
+            }
+
             _ => Command::Raw(term.clone()),
         })
     }
@@ -358,6 +600,45 @@ mod tests {
             back,
             Command::Get(vec![Term::unit("X"), Term::unit("Y"), Term::unit("Z")])
         );
+    }
+
+    #[test]
+    fn get_csy_transformation_round_trips() {
+        let term: Term = Command::GetCsyTransformation(CsyTransformKind::PartCsy).into();
+        assert_eq!(term.to_string(), "GetCsyTransformation(PartCsy)");
+        let back = Command::try_from(&term).unwrap();
+        assert_eq!(
+            back,
+            Command::GetCsyTransformation(CsyTransformKind::PartCsy)
+        );
+    }
+
+    #[test]
+    fn set_csy_transformation_round_trips() {
+        let xform = CsyTransform::new(10.0, 20.0, 5.0, 0.0, 90.0, 0.0);
+        let term: Term =
+            Command::SetCsyTransformation(CsyTransformKind::MultipleArmCsy, xform).into();
+        assert_eq!(
+            term.to_string(),
+            "SetCsyTransformation(MultipleArmCsy, 10.0, 20.0, 5.0, 0.0, 90.0, 0.0)"
+        );
+        let back = Command::try_from(&term).unwrap();
+        assert_eq!(
+            back,
+            Command::SetCsyTransformation(CsyTransformKind::MultipleArmCsy, xform)
+        );
+    }
+
+    #[test]
+    fn save_and_load_coord_system_round_trip() {
+        let term: Term = Command::SaveActiveCoordSystem("Fixture1".into()).into();
+        assert_eq!(term.to_string(), "SaveActiveCoordSystem(\"Fixture1\")");
+        let back = Command::try_from(&term).unwrap();
+        assert_eq!(back, Command::SaveActiveCoordSystem("Fixture1".into()));
+
+        let term: Term = Command::LoadCoordSystem("Fixture1".into()).into();
+        let back = Command::try_from(&term).unwrap();
+        assert_eq!(back, Command::LoadCoordSystem("Fixture1".into()));
     }
 
     #[test]

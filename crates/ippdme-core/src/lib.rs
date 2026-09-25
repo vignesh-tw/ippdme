@@ -11,6 +11,6 @@ pub mod parser;
 pub mod response;
 
 pub use ast::{Marker, Message, Tag, Term};
-pub use commands::{Command, CoordSystem, Point};
+pub use commands::{Command, CoordSystem, CsyTransform, CsyTransformKind, Point};
 pub use error::{IppError, Result};
 pub use parser::{parse_message, parse_term_str};

@@ -68,6 +68,18 @@ pub fn default_presets() -> Vec<PresetCategory> {
                     label: "SetCoordSystem(PCS)",
                     build: || Command::SetCoordSystem(CoordSystem::Pcs),
                 },
+                Preset {
+                    label: "GetCoordSystem()",
+                    build: || Command::GetCoordSystem,
+                },
+                Preset {
+                    label: "GetCsyTransformation(PartCsy)",
+                    build: || Command::GetCsyTransformation(ippdme_core::CsyTransformKind::PartCsy),
+                },
+                Preset {
+                    label: "EnumCoordSystems()",
+                    build: || Command::EnumCoordSystems,
+                },
             ],
         },
         PresetCategory {
