@@ -117,6 +117,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
         .enumerate()
         .map(|(i, entry)| {
             let (arrow, color) = match (entry.direction, entry.marker) {
+                (Direction::Out, Some('!')) => ("!!!", Color::Red),
                 (Direction::Out, _) => ("-->", Color::Blue),
                 (Direction::In, Some('#')) => ("<--", Color::Green),
                 (Direction::In, Some('!')) => ("<--", Color::Red),

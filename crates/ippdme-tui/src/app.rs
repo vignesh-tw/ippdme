@@ -81,7 +81,6 @@ pub struct App {
     pub connecting: bool,
     pub app_tx: mpsc::UnboundedSender<AppEvent>,
     pub app_rx: mpsc::UnboundedReceiver<AppEvent>,
-    pending_started: std::collections::HashMap<u32, Instant>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -112,7 +111,6 @@ impl App {
             connecting: false,
             app_tx,
             app_rx,
-            pending_started: std::collections::HashMap::new(),
         }
     }
 
@@ -128,7 +126,6 @@ impl App {
     }
 
     pub fn push_out(&mut self, tag: Tag, text: String) {
-        self.pending_started.insert(tag.0, Instant::now());
         self.log.push(LogEntry {
             direction: Direction::Out,
             tag: Some(tag.0),
@@ -139,9 +136,24 @@ impl App {
         });
     }
 
+    /// Record a send attempt that was rejected locally (not connected yet, or
+    /// a parse error) so it's visible in the log instead of silently
+    /// vanishing behind a status-bar message the user may not see in time.
+    fn push_denied(&mut self, reason: impl Into<String>) {
+        let reason = reason.into();
+        self.status = reason.clone();
+        self.log.push(LogEntry {
+            direction: Direction::Out,
+            tag: None,
+            marker: Some('!'),
+            text: format!("<{reason}>"),
+            unix_ms: Self::now_ms(),
+            latency_ms: None,
+        });
+    }
+
     fn push_result(&mut self, tag: Tag, started: Instant, result: Result<Message, NetError>) {
         let latency_ms = Some(started.elapsed().as_millis());
-        self.pending_started.remove(&tag.0);
         match result {
             Ok(msg) => {
                 let marker = match &msg {
@@ -279,9 +291,18 @@ impl App {
         }
     }
 
+    fn not_connected_reason(&self) -> &'static str {
+        if self.connecting {
+            "Still connecting — command not sent, try again in a moment"
+        } else {
+            "Not connected — command not sent"
+        }
+    }
+
     fn send_command(&mut self, cmd: Command) {
         let Some(client) = self.client.clone() else {
-            self.status = "Not connected".to_string();
+            let reason = self.not_connected_reason();
+            self.push_denied(reason);
             return;
         };
         let term: ippdme_core::Term = cmd.into();
@@ -315,7 +336,8 @@ impl App {
         match parse_term_str(&text) {
             Ok(term) => {
                 let Some(client) = self.client.clone() else {
-                    self.status = "Not connected".to_string();
+                    let reason = self.not_connected_reason();
+                    self.push_denied(reason);
                     return;
                 };
                 let tag = client.allocate_tag();
@@ -333,7 +355,7 @@ impl App {
                 self.input.clear();
             }
             Err(e) => {
-                self.status = format!("Parse error: {e}");
+                self.push_denied(format!("Parse error: {e}"));
             }
         }
     }
