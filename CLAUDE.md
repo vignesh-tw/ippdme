@@ -9,22 +9,25 @@ protocol — a line-based ASCII protocol (CRLF-terminated, default TCP port
 `1294`) used to command Coordinate Measuring Machines (CMMs) in industrial
 metrology. See `docs/ippdme_standard.pdf` for the full protocol spec.
 
-It's a 4-crate Cargo workspace that ships as three things:
+It's a 5-crate Cargo workspace that ships as four things:
 
 - Pure Rust libraries (`ippdme-core`, `ippdme-net`), cross-compilable to
   `aarch64-unknown-linux-gnu` (Raspberry Pi).
 - A Python package (`pip install ippdme`) via PyO3/Maturin.
-- A terminal UI (`ippdme-tui`), "Postman for I++ DME".
+- A terminal UI (`ippdme-tui`), "Postman for I++ DME" — manual/interactive use.
+- A Mountebank-style stub server (`ippdme-imposter`), YAML- or Rust-configurable
+  — headless/automated use.
 
 ## Workspace layout
 
 ```
-crates/ippdme-core/   Protocol AST (Term/Message), winnow parser, Display serializer, typed Command wrappers
-crates/ippdme-net/    Tokio async IppClient + IppMockServer, built on ippdme-core
-crates/ippdme-py/     PyO3 bindings (crate name `_ippdme`, imported as ippdme._ippdme)
-crates/ippdme-tui/    Ratatui terminal UI
-python/ippdme/        Python package source (mixed maturin layout: __init__.py, testing.py, py.typed)
-tests/                Python-level integration tests (pytest) against the mock server
+crates/ippdme-core/       Protocol AST (Term/Message), winnow parser, Display serializer, typed Command wrappers
+crates/ippdme-net/        Tokio async IppClient + IppMockServer, built on ippdme-core
+crates/ippdme-imposter/   Mountebank-style stub server (predicate -> response sequence), YAML or Rust builder config
+crates/ippdme-py/         PyO3 bindings (crate name `_ippdme`, imported as ippdme._ippdme)
+crates/ippdme-tui/        Ratatui terminal UI
+python/ippdme/            Python package source (mixed maturin layout: __init__.py, testing.py, py.typed)
+tests/                    Python-level integration tests (pytest) against the mock server
 ```
 
 ## Architecture notes
@@ -47,6 +50,21 @@ tests/                Python-level integration tests (pytest) against the mock s
   fixture for both Rust integration tests and the Python `ippdme.testing`
   pytest fixtures — keep its behavior in sync with both test suites if it
   changes.
+- **`ippdme-imposter` keeps `serde` out of `ippdme-core` on purpose.** Its
+  `config.rs` defines its own YAML-facing `CallShape`/`ArgValue` types (with
+  `#[derive(Deserialize)]`) and converts them into `ippdme_core::Term` via
+  plain `From` impls, rather than deriving serde on `Term` directly (which
+  `ippdme-core`'s `serde` feature flag *could* do, but that would serialize
+  `Term`'s internal enum tagging verbatim — ugly and a maintenance hazard for
+  a file meant to be hand-edited by non-Rust users). The Rust builder API
+  (`Stub::when(...).responds_with(...)`) and the YAML loader
+  (`Imposter::from_yaml_*`) both build the same `Stub`/`Predicate`/
+  `ResponseSpec` runtime types, so there's one schema, not two to keep in
+  sync. A stub's `responses` list cycles per match and sticks on the last
+  entry once exhausted (`Stub::next_response`) — use this for "fails once,
+  then succeeds" scenarios. `serve(self)` consumes the `Imposter`; grab
+  `Imposter::handle()` first if the caller needs `received_calls()` after
+  spawning it.
 - **`ippdme-py`** wraps everything in a single shared `tokio::runtime::Runtime`
   (`OnceLock`, see `runtime.rs`) and exposes a *synchronous* Python API: each
   method does `py.allow_threads(|| runtime().block_on(...))`. This means

@@ -5,7 +5,7 @@ line-based ASCII protocol used across industrial manufacturing to command
 Coordinate Measuring Machines (CMMs) and other dimensional measurement
 equipment, typically over TCP/IP port `1294`.
 
-`ippdme` ships as three things from one Rust workspace:
+`ippdme` ships as four things from one Rust workspace:
 
 - **`ippdme-core`** / **`ippdme-net`** — a pure Rust protocol parser/AST and
   an async Tokio TCP client + mock CMM server, usable directly from Rust and
@@ -14,7 +14,11 @@ equipment, typically over TCP/IP port `1294`.
   [Maturin](https://www.maturin.rs), exposing a synchronous, Pythonic API for
   QA/CI pipelines and data scientists.
 - **`ippdme-tui`** — an interactive terminal UI ("Postman for I++ DME") to
-  inspect, mock, and command CMMs live over the wire.
+  inspect, mock, and command CMMs live over the wire, for manual/exploratory
+  use.
+- **`ippdme-imposter`** — a [Mountebank](https://www.mbtest.org)-style,
+  YAML-configurable stub server for headless, automated testing against a
+  virtual CMM, without touching Rust or the TUI.
 
 See [`docs/SUPPORTED_METHODS.md`](docs/SUPPORTED_METHODS.md) for which I++
 DME protocol methods have typed support today versus which are reachable only
@@ -27,8 +31,9 @@ ippdme/
 ├── Cargo.toml                   # Workspace manifest
 ├── pyproject.toml                # Maturin build configuration for PyPI
 ├── crates/
-│   ├── ippdme-core/              # Protocol parser, AST, serializer
+│   ├── ippdme-core/               # Protocol parser, AST, serializer
 │   ├── ippdme-net/                # Async Tokio TCP client & mock server
+│   ├── ippdme-imposter/           # Mountebank-style YAML stub server
 │   ├── ippdme-py/                 # PyO3 bindings for Python
 │   └── ippdme-tui/                # Ratatui terminal UI
 └── python/ippdme/                 # Python package source (mixed maturin layout)
@@ -103,6 +108,43 @@ external hardware or a separate mock-server process:
 Leave the mode as `Client`, press `h`/`p` to set the target host/port (default
 `127.0.0.1:1294`), then press `c` to connect — the rest of the workflow
 (presets, raw commands, live stream, export) is identical.
+
+## Imposter (headless automated testing)
+
+`ippdme-imposter` is for scripted/CI testing: define how a virtual CMM
+should respond to specific calls in a YAML file, no Rust required, then
+point any I++ DME client at it.
+
+```bash
+cargo run -p ippdme-imposter --bin ippdme-imposter -- crates/ippdme-imposter/examples/imposter.yaml
+```
+
+```yaml
+port: 1294
+stubs:
+  - predicate:
+      call: PtMeas
+    responses:
+      - data:
+          call: PtMeas
+          args:
+            - { name: X, value: 10.002 }
+            - { name: Y, value: 20.001 }
+        after_ms: 500   # simulate probe-touch latency
+
+  - predicate:
+      call: GetErrorInfo
+      args: [42]
+    responses:
+      - error: CollisionDetected
+```
+
+The same `Predicate`/`Stub`/`ResponseSpec` types are also usable directly
+from Rust (e.g. inline in a `#[tokio::test]`) via `Imposter::builder()` —
+see `crates/ippdme-imposter/tests/imposter_integration.rs` for examples,
+including response sequencing (a stub can fail once, then succeed) and
+`Imposter::handle().received_calls()` for verifying what a client under
+test actually sent.
 
 ## Protocol essentials
 
