@@ -32,10 +32,13 @@ ippdme/
 
 ## Rust
 
+`ippdme-py` is a Python extension module and needs `maturin` (see below), not
+a plain `cargo build`, so exclude it from workspace-wide commands:
+
 ```bash
-cargo build --workspace
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
+cargo build --workspace --exclude ippdme-py
+cargo test --workspace --exclude ippdme-py
+cargo clippy --workspace --exclude ippdme-py --all-targets -- -D warnings
 ```
 
 ## Python
@@ -57,6 +60,45 @@ response = client.go_to(x=10.0, y=20.0, z=5.0)
 print(response.is_ack())
 "
 ```
+
+## TUI ("Postman for I++ DME")
+
+Build and run `ippdme-tui` directly with Cargo — no separate install step:
+
+```bash
+cargo run -p ippdme-tui
+```
+
+### Connect to the built-in mock server
+
+The TUI can act as its own mock CMM, so you can try the whole flow without any
+external hardware or a separate mock-server process:
+
+1. Launch it: `cargo run -p ippdme-tui`.
+2. Press `m` to toggle the mode shown in the connection bar from `Client` to
+   `Mock Server`.
+3. Press `c` to connect. This binds an embedded `IppMockServer` on
+   `127.0.0.1:1294` (press `p` beforehand to edit the port, `h` for the host,
+   if you want a different one) and automatically connects a client to it, so
+   you can immediately exercise it. The bar turns green and shows
+   `CONNECTED`.
+4. Use `↑`/`↓` to pick a preset in the left sidebar (e.g. `Session →
+   StartSession()`, `Motion → GoTo(10, 10, 10)`, `Measurement → PtMeas()`)
+   and press `Enter` to send it. The outbound command appears in blue in the
+   live protocol stream on the right, followed by the color-coded response
+   (green `#` ack, yellow `%` data, red `!` error) with its round-trip
+   latency.
+5. Press `Tab` to move focus into the raw command box and type any I++ term
+   directly, e.g. `SetCoordSystem(PCS)`, then `Enter` to send it.
+6. Press `e` at any time to export the session transcript to a timestamped
+   `.log` and `.json` file in the current directory.
+7. Press `c` again to disconnect, `q` or `Esc` to quit.
+
+### Connect to a real CMM or gateway
+
+Leave the mode as `Client`, press `h`/`p` to set the target host/port (default
+`127.0.0.1:1294`), then press `c` to connect — the rest of the workflow
+(presets, raw commands, live stream, export) is identical.
 
 ## Protocol essentials
 
