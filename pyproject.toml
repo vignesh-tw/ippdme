@@ -1,0 +1,30 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "ippdme"
+version = "0.1.0"
+description = "Modern, memory-safe I++ DME protocol client and mock CMM server for industrial metrology"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT OR Apache-2.0" }
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Intended Audience :: Manufacturing",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.optional-dependencies]
+testing = ["pytest>=7.0"]
+
+[tool.maturin]
+module-name = "ippdme._ippdme"
+python-source = "python"
+manifest-path = "crates/ippdme-py/Cargo.toml"
+features = ["pyo3/extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
