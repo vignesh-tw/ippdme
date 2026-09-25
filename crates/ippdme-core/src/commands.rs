@@ -95,6 +95,43 @@ pub enum Command {
     SetCoordSystem(CoordSystem),
     OnMoveArc,
     ScanOnCircle,
+
+    // --- Server methods (spec 6.3.1) ---
+    /// Stop a daemon (e.g. one started by `OnMoveReportE`) by its event tag.
+    StopDaemon(u32),
+    StopAllDaemons,
+    /// Abort all pending transactions and, if possible, the current one.
+    AbortE,
+    /// Retrieve the human-readable text for a given error number.
+    GetErrorInfo(u32),
+    ClearAllErrors,
+    /// Query one or more properties, e.g. `Tool.PtMeasPar.Speed()`.
+    GetProp(Vec<Term>),
+    /// High-priority (fast queue) variant of [`Command::GetProp`].
+    GetPropE(Vec<Term>),
+    /// Set one or more properties, e.g. `Tool.PtMeasPar.Speed(100)`.
+    SetProp(Vec<Term>),
+    /// Query the direct children of a property/object, e.g. `Tool.GoToPar()`.
+    EnumProp(Vec<Term>),
+    /// Query all (grand-)children of a property/object, e.g. `Tool()`.
+    EnumAllProp(Vec<Term>),
+
+    // --- DME methods (spec 6.3.2) ---
+    IsHomed,
+    EnableUser,
+    DisableUser,
+    IsUserEnabled,
+    GetMachineClass,
+    /// Fast-queue error status query.
+    GetErrStatusE,
+    GetXtdErrStatus,
+    /// Query axis positions and/or dynamic properties, e.g. `X(), Y(), Z()`.
+    Get(Vec<Term>),
+    /// Define which fields the server reports after a completed `PtMeas`.
+    OnPtMeasReport(Vec<Term>),
+    /// Start a daemon reporting machine position while it moves.
+    OnMoveReportE(Vec<Term>),
+
     /// Any command not covered by a typed variant above.
     Raw(Term),
 }
@@ -124,6 +161,29 @@ impl From<Command> for Term {
             ),
             Command::OnMoveArc => Term::unit("OnMoveArc"),
             Command::ScanOnCircle => Term::unit("ScanOnCircle"),
+
+            Command::StopDaemon(tag) => Term::call("StopDaemon", vec![Term::Number(tag as f64)]),
+            Command::StopAllDaemons => Term::unit("StopAllDaemons"),
+            Command::AbortE => Term::unit("AbortE"),
+            Command::GetErrorInfo(n) => Term::call("GetErrorInfo", vec![Term::Number(n as f64)]),
+            Command::ClearAllErrors => Term::unit("ClearAllErrors"),
+            Command::GetProp(args) => Term::call("GetProp", args),
+            Command::GetPropE(args) => Term::call("GetPropE", args),
+            Command::SetProp(args) => Term::call("SetProp", args),
+            Command::EnumProp(args) => Term::call("EnumProp", args),
+            Command::EnumAllProp(args) => Term::call("EnumAllProp", args),
+
+            Command::IsHomed => Term::unit("IsHomed"),
+            Command::EnableUser => Term::unit("EnableUser"),
+            Command::DisableUser => Term::unit("DisableUser"),
+            Command::IsUserEnabled => Term::unit("IsUserEnabled"),
+            Command::GetMachineClass => Term::unit("GetMachineClass"),
+            Command::GetErrStatusE => Term::unit("GetErrStatusE"),
+            Command::GetXtdErrStatus => Term::unit("GetXtdErrStatus"),
+            Command::Get(args) => Term::call("Get", args),
+            Command::OnPtMeasReport(args) => Term::call("OnPtMeasReport", args),
+            Command::OnMoveReportE(args) => Term::call("OnMoveReportE", args),
+
             Command::Raw(t) => t,
         }
     }
@@ -162,6 +222,57 @@ impl TryFrom<&Term> for Command {
             }
             "OnMoveArc" => Command::OnMoveArc,
             "ScanOnCircle" => Command::ScanOnCircle,
+
+            "StopDaemon" => {
+                let tag = term.args().first().and_then(|t| match t {
+                    Term::Number(n) => Some(*n as u32),
+                    _ => None,
+                });
+                match tag {
+                    Some(tag) => Command::StopDaemon(tag),
+                    None => {
+                        return Err(IppError::WrongArgType {
+                            func: "StopDaemon".into(),
+                            name: "event_tag".into(),
+                        })
+                    }
+                }
+            }
+            "StopAllDaemons" => Command::StopAllDaemons,
+            "AbortE" => Command::AbortE,
+            "GetErrorInfo" => {
+                let n = term.args().first().and_then(|t| match t {
+                    Term::Number(n) => Some(*n as u32),
+                    _ => None,
+                });
+                match n {
+                    Some(n) => Command::GetErrorInfo(n),
+                    None => {
+                        return Err(IppError::WrongArgType {
+                            func: "GetErrorInfo".into(),
+                            name: "error_number".into(),
+                        })
+                    }
+                }
+            }
+            "ClearAllErrors" => Command::ClearAllErrors,
+            "GetProp" => Command::GetProp(term.args().to_vec()),
+            "GetPropE" => Command::GetPropE(term.args().to_vec()),
+            "SetProp" => Command::SetProp(term.args().to_vec()),
+            "EnumProp" => Command::EnumProp(term.args().to_vec()),
+            "EnumAllProp" => Command::EnumAllProp(term.args().to_vec()),
+
+            "IsHomed" => Command::IsHomed,
+            "EnableUser" => Command::EnableUser,
+            "DisableUser" => Command::DisableUser,
+            "IsUserEnabled" => Command::IsUserEnabled,
+            "GetMachineClass" => Command::GetMachineClass,
+            "GetErrStatusE" => Command::GetErrStatusE,
+            "GetXtdErrStatus" => Command::GetXtdErrStatus,
+            "Get" => Command::Get(term.args().to_vec()),
+            "OnPtMeasReport" => Command::OnPtMeasReport(term.args().to_vec()),
+            "OnMoveReportE" => Command::OnMoveReportE(term.args().to_vec()),
+
             _ => Command::Raw(term.clone()),
         })
     }
@@ -192,6 +303,61 @@ mod tests {
         let msg = parse_message("00001 SomeFutureCommand(Foo(1.0))").unwrap();
         let cmd = Command::try_from(msg.term()).unwrap();
         assert!(matches!(cmd, Command::Raw(_)));
+    }
+
+    #[test]
+    fn get_prop_round_trips_dotted_path() {
+        let term: Term = Command::GetProp(vec![Term::unit("Tool.PtMeasPar.Speed")]).into();
+        assert_eq!(term.to_string(), "GetProp(Tool.PtMeasPar.Speed())");
+        let back = Command::try_from(&term).unwrap();
+        assert_eq!(
+            back,
+            Command::GetProp(vec![Term::unit("Tool.PtMeasPar.Speed")])
+        );
+    }
+
+    #[test]
+    fn set_prop_round_trips_with_value() {
+        let term: Term = Command::SetProp(vec![Term::call(
+            "Tool.PtMeasPar.Speed",
+            vec![Term::Number(100.0)],
+        )])
+        .into();
+        assert_eq!(term.to_string(), "SetProp(Tool.PtMeasPar.Speed(100.0))");
+    }
+
+    #[test]
+    fn stop_daemon_round_trips() {
+        let term: Term = Command::StopDaemon(51).into();
+        assert_eq!(term.to_string(), "StopDaemon(51.0)");
+        let back = Command::try_from(&term).unwrap();
+        assert_eq!(back, Command::StopDaemon(51));
+    }
+
+    #[test]
+    fn get_error_info_round_trips() {
+        let term: Term = Command::GetErrorInfo(511).into();
+        let back = Command::try_from(&term).unwrap();
+        assert_eq!(back, Command::GetErrorInfo(511));
+    }
+
+    #[test]
+    fn is_homed_round_trips() {
+        let term: Term = Command::IsHomed.into();
+        assert_eq!(term.to_string(), "IsHomed()");
+        assert_eq!(Command::try_from(&term).unwrap(), Command::IsHomed);
+    }
+
+    #[test]
+    fn get_round_trips_axis_query() {
+        let term: Term =
+            Command::Get(vec![Term::unit("X"), Term::unit("Y"), Term::unit("Z")]).into();
+        assert_eq!(term.to_string(), "Get(X(), Y(), Z())");
+        let back = Command::try_from(&term).unwrap();
+        assert_eq!(
+            back,
+            Command::Get(vec![Term::unit("X"), Term::unit("Y"), Term::unit("Z")])
+        );
     }
 
     #[test]

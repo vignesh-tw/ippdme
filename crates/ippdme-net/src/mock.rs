@@ -99,6 +99,62 @@ async fn handle_command(tag: Tag, cmd: Command) -> Message {
             response::ack(tag)
         }
         Command::OnMoveArc | Command::ScanOnCircle => response::ack(tag),
+
+        Command::StopDaemon(_) | Command::StopAllDaemons => response::ack(tag),
+        Command::AbortE => response::ack(tag),
+        Command::GetErrorInfo(n) => {
+            let term = ippdme_core::Term::Call(
+                "GetErrorInfo".into(),
+                vec![ippdme_core::Term::Str(format!("Error {n}"))],
+            );
+            response::data(tag, term)
+        }
+        Command::ClearAllErrors => response::ack(tag),
+        Command::GetProp(_)
+        | Command::GetPropE(_)
+        | Command::EnumProp(_)
+        | Command::EnumAllProp(_) => {
+            // The mock doesn't model a real property tree; echo an empty result.
+            response::data(tag, ippdme_core::Term::unit("Prop"))
+        }
+        Command::SetProp(_) => response::ack(tag),
+
+        Command::IsHomed => {
+            let term =
+                ippdme_core::Term::Call("IsHomed".into(), vec![ippdme_core::Term::Number(1.0)]);
+            response::data(tag, term)
+        }
+        Command::EnableUser | Command::DisableUser => response::ack(tag),
+        Command::IsUserEnabled => {
+            let term = ippdme_core::Term::Call(
+                "IsUserEnabled".into(),
+                vec![ippdme_core::Term::Number(1.0)],
+            );
+            response::data(tag, term)
+        }
+        Command::GetMachineClass => {
+            let term = ippdme_core::Term::Call(
+                "GetMachineClass".into(),
+                vec![ippdme_core::Term::Ident("CartCMM".into())],
+            );
+            response::data(tag, term)
+        }
+        Command::GetErrStatusE => {
+            let term =
+                ippdme_core::Term::Call("ErrStatus".into(), vec![ippdme_core::Term::Number(0.0)]);
+            response::data(tag, term)
+        }
+        Command::GetXtdErrStatus => response::data(tag, ippdme_core::Term::unit("XtdErrStatus")),
+        Command::Get(_) => {
+            let args = vec![
+                ippdme_core::Term::Call("X".into(), vec![ippdme_core::Term::Number(10.002)]),
+                ippdme_core::Term::Call("Y".into(), vec![ippdme_core::Term::Number(20.001)]),
+                ippdme_core::Term::Call("Z".into(), vec![ippdme_core::Term::Number(5.000)]),
+            ];
+            response::data(tag, ippdme_core::Term::call("Get", args))
+        }
+        Command::OnPtMeasReport(_) | Command::OnMoveReportE(_) => response::ack(tag),
+
         Command::Raw(_) => response::error(tag, "UnknownCommand"),
     }
 }

@@ -70,6 +70,66 @@ pub fn default_presets() -> Vec<PresetCategory> {
                 },
             ],
         },
+        PresetCategory {
+            name: "Status",
+            items: vec![
+                Preset {
+                    label: "IsHomed()",
+                    build: || Command::IsHomed,
+                },
+                Preset {
+                    label: "IsUserEnabled()",
+                    build: || Command::IsUserEnabled,
+                },
+                Preset {
+                    label: "EnableUser()",
+                    build: || Command::EnableUser,
+                },
+                Preset {
+                    label: "DisableUser()",
+                    build: || Command::DisableUser,
+                },
+                Preset {
+                    label: "GetMachineClass()",
+                    build: || Command::GetMachineClass,
+                },
+                Preset {
+                    label: "GetErrStatusE()",
+                    build: || Command::GetErrStatusE,
+                },
+                Preset {
+                    label: "GetXtdErrStatus()",
+                    build: || Command::GetXtdErrStatus,
+                },
+                Preset {
+                    label: "Get(X, Y, Z)",
+                    build: || {
+                        Command::Get(vec![
+                            ippdme_core::Term::unit("X"),
+                            ippdme_core::Term::unit("Y"),
+                            ippdme_core::Term::unit("Z"),
+                        ])
+                    },
+                },
+            ],
+        },
+        PresetCategory {
+            name: "Errors & Daemons",
+            items: vec![
+                Preset {
+                    label: "ClearAllErrors()",
+                    build: || Command::ClearAllErrors,
+                },
+                Preset {
+                    label: "AbortE()",
+                    build: || Command::AbortE,
+                },
+                Preset {
+                    label: "StopAllDaemons()",
+                    build: || Command::StopAllDaemons,
+                },
+            ],
+        },
     ]
 }
 

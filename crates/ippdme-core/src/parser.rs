@@ -26,7 +26,9 @@ fn is_ident_start(c: char) -> bool {
 }
 
 fn is_ident_cont(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_'
+    // '.' allowed for dotted property paths, e.g. `Tool.PtMeasPar.Speed()`
+    // used by GetProp/SetProp/EnumProp and friends.
+    c.is_ascii_alphanumeric() || c == '_' || c == '.'
 }
 
 fn parse_ident(input: &mut &str) -> ModalResult<String> {
@@ -184,6 +186,13 @@ mod tests {
     #[test]
     fn rejects_trailing_garbage() {
         assert!(parse_message("00001 GoTo() extra").is_err());
+    }
+
+    #[test]
+    fn parses_dotted_property_path() {
+        let msg = parse_message("00001 GetProp(Tool.PtMeasPar.Speed())").unwrap();
+        let args = msg.term().args();
+        assert_eq!(args[0].name(), Some("Tool.PtMeasPar.Speed"));
     }
 
     #[test]
