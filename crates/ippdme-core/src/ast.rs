@@ -157,8 +157,15 @@ impl fmt::Display for Marker {
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Message {
-    Command { tag: Tag, term: Term },
-    Response { tag: Tag, marker: Marker, term: Term },
+    Command {
+        tag: Tag,
+        term: Term,
+    },
+    Response {
+        tag: Tag,
+        marker: Marker,
+        term: Term,
+    },
 }
 
 impl Message {

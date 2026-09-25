@@ -50,10 +50,7 @@ impl PyResponse {
     /// Read a nested identifier-valued parameter shaped like `Name(Value)`,
     /// e.g. a coordinate system tag inside a compound response.
     fn get_ident(&self, param: &str) -> Option<String> {
-        self.inner
-            .term()
-            .get_ident_param(param)
-            .map(str::to_string)
+        self.inner.term().get_ident_param(param).map(str::to_string)
     }
 
     /// Read the first bare positional argument as an identifier, e.g. the

@@ -30,10 +30,7 @@ fn is_ident_cont(c: char) -> bool {
 }
 
 fn parse_ident(input: &mut &str) -> ModalResult<String> {
-    (
-        one_of(is_ident_start),
-        take_while(0.., is_ident_cont),
-    )
+    (one_of(is_ident_start), take_while(0.., is_ident_cont))
         .take()
         .map(|s: &str| s.to_string())
         .parse_next(input)

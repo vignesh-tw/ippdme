@@ -172,7 +172,12 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     } else {
         Span::raw(app.input.as_str())
     };
-    f.render_widget(Paragraph::new(Line::from(text)).block(block).wrap(Wrap { trim: false }), area);
+    f.render_widget(
+        Paragraph::new(Line::from(text))
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        area,
+    );
 }
 
 fn draw_help(f: &mut Frame, area: Rect) {

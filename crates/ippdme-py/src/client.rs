@@ -86,8 +86,8 @@ impl PyIppClient {
     /// Send a raw I++ DME term, e.g. `"OnMoveArc(...)"`, for commands not yet
     /// covered by a dedicated method.
     fn send_raw(&self, py: Python<'_>, term: &str) -> PyResult<PyResponse> {
-        let term = ippdme_core::parse_term_str(term)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let term =
+            ippdme_core::parse_term_str(term).map_err(|e| PyValueError::new_err(e.to_string()))?;
         self.block_on(py, move |c| async move { c.send(term).await })
     }
 }

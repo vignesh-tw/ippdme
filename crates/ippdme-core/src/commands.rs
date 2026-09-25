@@ -118,9 +118,10 @@ impl From<Command> for Term {
             Command::Home => Term::unit("Home"),
             Command::GoTo(p) => Term::call("GoTo", p.to_args()),
             Command::PtMeas(p) => Term::call("PtMeas", p.to_args()),
-            Command::SetCoordSystem(cs) => {
-                Term::call("SetCoordSystem", vec![Term::Ident(cs.as_ident().to_string())])
-            }
+            Command::SetCoordSystem(cs) => Term::call(
+                "SetCoordSystem",
+                vec![Term::Ident(cs.as_ident().to_string())],
+            ),
             Command::OnMoveArc => Term::unit("OnMoveArc"),
             Command::ScanOnCircle => Term::unit("ScanOnCircle"),
             Command::Raw(t) => t,
@@ -195,9 +196,8 @@ mod tests {
 
     #[test]
     fn pt_meas_parses_partial_response() {
-        let msg =
-            parse_message("00007 % PtMeas(X(10.002), Y(20.001), Z(5.000), I(0), J(0), K(1))")
-                .unwrap();
+        let msg = parse_message("00007 % PtMeas(X(10.002), Y(20.001), Z(5.000), I(0), J(0), K(1))")
+            .unwrap();
         let cmd = Command::try_from(msg.term()).unwrap();
         match cmd {
             Command::PtMeas(p) => {
