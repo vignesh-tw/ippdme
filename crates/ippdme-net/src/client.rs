@@ -99,9 +99,22 @@ impl IppClient {
         Tag::new(self.next_tag.fetch_add(1, Ordering::Relaxed))
     }
 
+    /// Allocate the next outbound tag without sending anything, e.g. so a
+    /// caller can log/display the tag before awaiting the response — see
+    /// [`IppClient::send_with_tag`].
+    pub fn allocate_tag(&self) -> Tag {
+        self.next_tag()
+    }
+
     /// Send a raw [`Term`] as a command and await its correlated response.
     pub async fn send(&self, term: Term) -> Result<Message> {
         let tag = self.next_tag();
+        self.send_with_tag(tag, term).await
+    }
+
+    /// Send a raw [`Term`] using a tag allocated ahead of time via
+    /// [`IppClient::allocate_tag`], and await its correlated response.
+    pub async fn send_with_tag(&self, tag: Tag, term: Term) -> Result<Message> {
         let (tx, rx) = oneshot::channel();
         self.pending.lock().unwrap().insert(tag, tx);
 
