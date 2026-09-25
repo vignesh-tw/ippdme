@@ -77,11 +77,11 @@ mod tests {
     #[test]
     fn sticks_on_last_response_once_exhausted() {
         let stub = Stub::when(Predicate::call("PtMeas"))
-            .responds_with(ResponseSpec::Ack)
+            .responds_with(ResponseSpec::ack())
             .responds_with(ResponseSpec::Error("Jammed".into()))
             .build();
 
-        assert_eq!(stub.next_response().spec, ResponseSpec::Ack);
+        assert_eq!(stub.next_response().spec, ResponseSpec::ack());
         assert_eq!(
             stub.next_response().spec,
             ResponseSpec::Error("Jammed".into())
@@ -96,7 +96,7 @@ mod tests {
     #[test]
     fn matches_delegates_to_predicate() {
         let stub = Stub::when(Predicate::call("Home"))
-            .responds_with(ResponseSpec::Ack)
+            .responds_with(ResponseSpec::ack())
             .build();
         assert!(stub.matches(&Term::unit("Home")));
         assert!(!stub.matches(&Term::unit("GoTo")));

@@ -84,7 +84,7 @@ impl PredicateConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ResponseConfig {
     #[serde(default)]
-    pub ack: Option<bool>,
+    pub ack: Option<AckValue>,
     #[serde(default)]
     pub error: Option<String>,
     #[serde(default)]
@@ -96,7 +96,8 @@ pub struct ResponseConfig {
 impl ResponseConfig {
     fn into_timed_response(self) -> Result<TimedResponse> {
         let spec = match (self.ack, self.error, self.data) {
-            (Some(true), None, None) => ResponseSpec::Ack,
+            (Some(AckValue::Bool(true)), None, None) => ResponseSpec::ack(),
+            (Some(AckValue::Named(name)), None, None) => ResponseSpec::ack_named(name),
             (None, Some(reason), None) => ResponseSpec::Error(reason),
             (None, None, Some(call)) => ResponseSpec::Data(call.into()),
             other => {
@@ -108,6 +109,16 @@ impl ResponseConfig {
             after_ms: self.after_ms,
         })
     }
+}
+
+/// `ack: true` sends the plain `Ack()` term; `ack: Ready` sends `Ready()`
+/// under the same Ack marker, for replies like `StartSession`'s that ack
+/// with a named term rather than the literal `Ack()`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum AckValue {
+    Bool(bool),
+    Named(String),
 }
 
 /// `Name(arg1, arg2, ...)`, the YAML-friendly counterpart to

@@ -64,10 +64,13 @@ impl Imposter {
         Ok(self.listener.local_addr()?)
     }
 
-    /// Every call term received so far, in arrival order, for verifying what
-    /// a client under test actually sent.
-    pub fn received_calls(&self) -> Vec<Term> {
-        self.log.lock().unwrap().clone()
+    /// A cheap, cloneable handle onto this imposter's received-call log.
+    /// `serve` consumes `self`, so grab this *before* spawning it if the
+    /// caller needs to verify what was received afterward.
+    pub fn handle(&self) -> ImposterHandle {
+        ImposterHandle {
+            log: self.log.clone(),
+        }
     }
 
     /// Accept connections forever, handling each on its own task.
@@ -121,6 +124,21 @@ async fn handle_connection(
     Ok(())
 }
 
+/// A cheap, cloneable handle onto a running [`Imposter`]'s received-call
+/// log, obtained via [`Imposter::handle`] before `serve` consumes it.
+#[derive(Clone)]
+pub struct ImposterHandle {
+    log: Arc<Mutex<Vec<Term>>>,
+}
+
+impl ImposterHandle {
+    /// Every call term received so far, in arrival order, for verifying what
+    /// a client under test actually sent.
+    pub fn received_calls(&self) -> Vec<Term> {
+        self.log.lock().unwrap().clone()
+    }
+}
+
 /// Builder for programmatically constructing an [`Imposter`] in Rust (rather
 /// than loading it from YAML), e.g. inline in a `#[tokio::test]`.
 pub struct ImposterBuilder {
@@ -148,7 +166,9 @@ impl From<StubBuilder> for Stub {
 
 /// Convenience for tests/examples: pick an ephemeral port, bind, and return
 /// the [`Imposter`] along with the address it's listening on.
-pub async fn spawn_ephemeral(stubs: Vec<Stub>) -> Result<(SocketAddr, tokio::task::JoinHandle<Result<()>>)> {
+pub async fn spawn_ephemeral(
+    stubs: Vec<Stub>,
+) -> Result<(SocketAddr, tokio::task::JoinHandle<Result<()>>)> {
     let imposter = Imposter::bind(("127.0.0.1", 0), stubs).await?;
     let addr = imposter.local_addr()?;
     let handle = tokio::spawn(imposter.serve());

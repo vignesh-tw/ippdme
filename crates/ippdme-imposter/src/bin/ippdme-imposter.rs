@@ -14,12 +14,10 @@ async fn main() {
         std::process::exit(2);
     });
 
-    let imposter = Imposter::from_yaml_file(&path)
-        .await
-        .unwrap_or_else(|e| {
-            eprintln!("failed to load {path}: {e}");
-            std::process::exit(1);
-        });
+    let imposter = Imposter::from_yaml_file(&path).await.unwrap_or_else(|e| {
+        eprintln!("failed to load {path}: {e}");
+        std::process::exit(1);
+    });
 
     let addr = imposter.local_addr().expect("bound listener has an addr");
     println!("ippdme-imposter listening on {addr} ({path})");

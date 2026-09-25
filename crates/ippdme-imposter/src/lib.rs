@@ -19,5 +19,5 @@ pub use config::ImposterConfig;
 pub use error::{ImposterError, Result};
 pub use predicate::Predicate;
 pub use response::{ResponseSpec, TimedResponse};
-pub use server::{spawn_ephemeral, Imposter, ImposterBuilder};
+pub use server::{spawn_ephemeral, Imposter, ImposterBuilder, ImposterHandle};
 pub use stub::{Stub, StubBuilder};

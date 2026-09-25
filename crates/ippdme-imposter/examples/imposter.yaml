@@ -1,0 +1,45 @@
+# Example ippdme-imposter config. Run it standalone with:
+#   cargo run -p ippdme-imposter --bin ippdme-imposter -- examples/imposter.yaml
+# then point any I++ DME client at 127.0.0.1:1294.
+
+port: 1294
+
+stubs:
+  # Matches PtMeas() with any args, always replies with the same measured
+  # point after a simulated 500ms probe-touch latency.
+  - predicate:
+      call: PtMeas
+    responses:
+      - data:
+          call: PtMeas
+          args:
+            - { name: X, value: 10.002 }
+            - { name: Y, value: 20.001 }
+            - { name: Z, value: 5.000 }
+        after_ms: 500
+
+  # Matches GetErrorInfo(42) specifically (exact args), simulating a
+  # documented fault code lookup.
+  - predicate:
+      call: GetErrorInfo
+      args: [42]
+    responses:
+      - data:
+          call: GetErrorInfo
+          args:
+            - { str: "Collision detected on probe head" }
+
+  # A stub with a response sequence: the first GoTo() call reports a
+  # collision, every call after that succeeds normally (sticky last
+  # response) -- useful for testing a client's retry logic.
+  - predicate:
+      call: GoTo
+    responses:
+      - error: CollisionDetected
+      - ack: true
+        after_ms: 500
+
+  - predicate:
+      call: StartSession
+    responses:
+      - ack: Ready
