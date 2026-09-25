@@ -1,0 +1,29 @@
+[package]
+name = "ippdme-imposter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Mountebank-style, YAML-configurable service virtualization for the I++ DME protocol"
+
+[[bin]]
+name = "ippdme-imposter"
+path = "src/bin/ippdme-imposter.rs"
+
+[dependencies]
+ippdme-core = { workspace = true }
+ippdme-net = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+# serde_yaml is unmaintained/archived; this is an actively maintained,
+# drop-in-compatible fork. Crate-specific, so it lives here rather than in
+# the workspace [dependencies] table.
+serde_yaml_ng = "0.10"
+
+[dev-dependencies]
+tokio = { workspace = true }

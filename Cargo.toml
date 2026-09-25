@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/ippdme-core",
     "crates/ippdme-net",
+    "crates/ippdme-imposter",
     "crates/ippdme-py",
     "crates/ippdme-tui",
 ]
