@@ -16,6 +16,10 @@ equipment, typically over TCP/IP port `1294`.
 - **`ippdme-tui`** — an interactive terminal UI ("Postman for I++ DME") to
   inspect, mock, and command CMMs live over the wire.
 
+See [`docs/SUPPORTED_METHODS.md`](docs/SUPPORTED_METHODS.md) for which I++
+DME protocol methods have typed support today versus which are reachable only
+via the generic `Command::Raw` fallback.
+
 ## Workspace layout
 
 ```
