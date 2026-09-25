@@ -1,0 +1,23 @@
+[package]
+name = "ippdme-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Interactive terminal UI (\"Postman for I++ DME\") for inspecting, mocking, and commanding CMMs"
+
+[[bin]]
+name = "ippdme-tui"
+path = "src/main.rs"
+
+[dependencies]
+ippdme-core = { workspace = true }
+ippdme-net = { workspace = true }
+ratatui = "0.28"
+crossterm = "0.28"
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+color-eyre = "0.6"

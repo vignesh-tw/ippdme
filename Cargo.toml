@@ -1,0 +1,33 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ippdme-core",
+    "crates/ippdme-net",
+    "crates/ippdme-py",
+    "crates/ippdme-tui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/vigneshrs/ippdme"
+description = "Open-source I++ DME protocol engine for industrial metrology (CMMs)"
+
+[workspace.dependencies]
+ippdme-core = { path = "crates/ippdme-core" }
+ippdme-net = { path = "crates/ippdme-net" }
+winnow = "0.6"
+thiserror = "1.0"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+futures = "0.3"
+bytes = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
