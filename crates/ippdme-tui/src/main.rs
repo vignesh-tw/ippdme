@@ -1,5 +1,6 @@
 mod app;
 mod presets;
+mod tls;
 mod ui;
 
 use std::io;
@@ -21,13 +22,21 @@ use app::{AddrField, App, Focus};
 async fn main() -> Result<()> {
     color_eyre::install()?;
 
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "-h" || a == "--help") {
+        println!("{}", tls::USAGE);
+        return Ok(());
+    }
+    let tls = tls::TlsOptions::from_args(args)
+        .map_err(|e| color_eyre::eyre::eyre!("{e}\n\n{}", tls::USAGE))?;
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run(&mut terminal).await;
+    let result = run(&mut terminal, tls).await;
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -36,8 +45,11 @@ async fn main() -> Result<()> {
     result
 }
 
-async fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
-    let mut app = App::new();
+async fn run(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    tls: Option<tls::TlsOptions>,
+) -> Result<()> {
+    let mut app = App::new(tls);
     let mut events = EventStream::new();
     let mut tick = tokio::time::interval(Duration::from_millis(100));
 

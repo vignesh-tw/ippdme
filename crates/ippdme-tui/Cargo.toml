@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 ippdme-core = { workspace = true }
-ippdme-net = { workspace = true }
+ippdme-net = { workspace = true, features = ["tls"] }
 ratatui = "0.28"
 crossterm = { version = "0.28", features = ["event-stream"] }
 tokio = { workspace = true }

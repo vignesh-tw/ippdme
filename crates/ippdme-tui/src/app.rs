@@ -5,6 +5,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ippdme_core::{parse_term_str, Command, Message, Tag};
 use ippdme_net::{IppClient, IppMockServer, NetError};
+
+use crate::tls::TlsOptions;
 use serde::Serialize;
 use tokio::sync::mpsc;
 
@@ -63,6 +65,7 @@ pub enum AppEvent {
 }
 
 pub struct App {
+    pub tls: Option<TlsOptions>,
     pub host: String,
     pub port: String,
     pub mode: Mode,
@@ -90,9 +93,10 @@ pub enum AddrField {
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(tls: Option<TlsOptions>) -> Self {
         let (app_tx, app_rx) = mpsc::unbounded_channel();
         App {
+            tls,
             host: "127.0.0.1".to_string(),
             port: "1294".to_string(),
             mode: Mode::Client,
@@ -193,7 +197,8 @@ impl App {
                 self.client = Some(client);
                 self.conn = ConnState::Connected;
                 self.connecting = false;
-                self.status = format!("Connected to {}", self.addr());
+                let secure = if self.tls.is_some() { " (TLS)" } else { "" };
+                self.status = format!("Connected to {}{secure}", self.addr());
             }
             AppEvent::ConnectFailed(err) => {
                 self.connecting = false;
@@ -241,9 +246,15 @@ impl App {
             Mode::Client => {
                 let addr = self.addr();
                 let tx = self.app_tx.clone();
+                let tls = self.tls.as_ref().map(|opts| opts.client_config(&self.host));
                 self.status = format!("Connecting to {addr}...");
                 tokio::spawn(async move {
-                    match IppClient::connect(addr).await {
+                    let connected = match tls {
+                        Some(Ok(tls)) => IppClient::connect_tls(addr, &tls).await,
+                        Some(Err(e)) => Err(e),
+                        None => IppClient::connect(addr).await,
+                    };
+                    match connected {
                         Ok(client) => {
                             let _ = tx.send(AppEvent::Connected(Arc::new(client)));
                         }
@@ -417,11 +428,5 @@ impl App {
             self.handle_app_event(ev);
         }
         Duration::from_millis(100)
-    }
-}
-
-impl Default for App {
-    fn default() -> Self {
-        Self::new()
     }
 }

@@ -56,7 +56,16 @@ fn draw_connection_bar(f: &mut Frame, app: &App, area: Rect) {
         Span::raw("   "),
         Span::styled("Target: ", Style::default().fg(Color::Gray)),
         Span::styled(
-            format!("{}:{}", app.host, app.port),
+            format!(
+                "{}:{}{}",
+                app.host,
+                app.port,
+                if app.tls.is_some() && app.mode == Mode::Client {
+                    " [TLS]"
+                } else {
+                    ""
+                }
+            ),
             Style::default().add_modifier(Modifier::BOLD),
         ),
         Span::raw("   "),
