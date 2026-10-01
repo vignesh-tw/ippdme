@@ -74,3 +74,18 @@ async fn subscribe_observes_events_live() {
     let observed = events.recv().await.unwrap();
     assert!(observed.is_ack());
 }
+
+#[tokio::test]
+async fn client_and_server_work_over_in_memory_duplex() {
+    use ippdme_core::{response, Message, Tag, Term};
+    use ippdme_net::{serve_connection, IppClient};
+
+    let (client_side, server_side) = tokio::io::duplex(4096);
+    let handler = |tag: Tag, _term: Term| async move { response::ack(tag) };
+    tokio::spawn(async move { serve_connection(server_side, &handler).await });
+
+    let client = IppClient::from_stream(client_side);
+    let reply = client.home().await.unwrap();
+    assert!(matches!(reply, Message::Response { .. }));
+    assert!(reply.is_ack());
+}

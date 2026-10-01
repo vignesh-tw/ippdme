@@ -400,14 +400,12 @@ dependencies = [
 name = "ippdme-imposter"
 version = "0.1.0"
 dependencies = [
- "futures",
  "ippdme-core",
  "ippdme-net",
  "serde",
  "serde_yaml_ng",
  "thiserror",
  "tokio",
- "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]

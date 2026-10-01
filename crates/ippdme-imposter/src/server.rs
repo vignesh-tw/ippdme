@@ -5,12 +5,9 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use futures::{SinkExt, StreamExt};
-use ippdme_core::{response, Message, Term};
-use ippdme_net::MessageCodec;
-use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
-use tokio_util::codec::Framed;
-use tracing::{debug, warn};
+use ippdme_core::{response, Message, Tag, Term};
+use ippdme_net::{Handler, IppServer};
+use tokio::net::ToSocketAddrs;
 
 use crate::config::ImposterConfig;
 use crate::error::Result;
@@ -21,8 +18,7 @@ use crate::stub::{Stub, StubBuilder};
 /// accept and handle connections. Every call it receives is logged and
 /// retrievable via [`Imposter::received_calls`] for test verification.
 pub struct Imposter {
-    listener: TcpListener,
-    stubs: Arc<Vec<Stub>>,
+    server: IppServer<StubHandler>,
     log: Arc<Mutex<Vec<Term>>>,
 }
 
@@ -51,17 +47,18 @@ impl Imposter {
     }
 
     async fn bind(addr: impl ToSocketAddrs, stubs: Vec<Stub>) -> Result<Self> {
-        let listener = TcpListener::bind(addr).await?;
-        Ok(Imposter {
-            listener,
-            stubs: Arc::new(stubs),
-            log: Arc::new(Mutex::new(Vec::new())),
-        })
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let handler = StubHandler {
+            stubs,
+            log: log.clone(),
+        };
+        let server = IppServer::bind(addr, handler).await?;
+        Ok(Imposter { server, log })
     }
 
     /// The actual bound address — useful when binding to port 0 in tests.
     pub fn local_addr(&self) -> Result<SocketAddr> {
-        Ok(self.listener.local_addr()?)
+        Ok(self.server.local_addr()?)
     }
 
     /// A cheap, cloneable handle onto this imposter's received-call log.
@@ -75,38 +72,22 @@ impl Imposter {
 
     /// Accept connections forever, handling each on its own task.
     pub async fn serve(self) -> Result<()> {
-        loop {
-            let (stream, peer) = self.listener.accept().await?;
-            debug!(%peer, "imposter: accepted connection");
-            let stubs = self.stubs.clone();
-            let log = self.log.clone();
-            tokio::spawn(async move {
-                if let Err(e) = handle_connection(stream, stubs, log).await {
-                    warn!(%peer, error = %e, "imposter: connection ended with error");
-                }
-            });
-        }
+        Ok(self.server.serve().await?)
     }
 }
 
-async fn handle_connection(
-    stream: TcpStream,
-    stubs: Arc<Vec<Stub>>,
+/// Matches each inbound call against the stub list and replays the next
+/// configured response.
+struct StubHandler {
+    stubs: Vec<Stub>,
     log: Arc<Mutex<Vec<Term>>>,
-) -> Result<()> {
-    let mut framed = Framed::new(stream, MessageCodec);
+}
 
-    while let Some(result) = framed.next().await {
-        let msg = result?;
-        let Message::Command { tag, term } = msg else {
-            // Imposters don't expect to receive marked responses from clients.
-            continue;
-        };
+impl Handler for StubHandler {
+    async fn handle(&self, tag: Tag, term: Term) -> Message {
+        self.log.lock().unwrap().push(term.clone());
 
-        log.lock().unwrap().push(term.clone());
-
-        let matched = stubs.iter().find(|stub| stub.matches(&term));
-        let reply = match matched {
+        match self.stubs.iter().find(|stub| stub.matches(&term)) {
             Some(stub) => {
                 let timed = stub.next_response();
                 if timed.after_ms > 0 {
@@ -115,13 +96,8 @@ async fn handle_connection(
                 timed.spec.to_message(tag)
             }
             None => response::error(tag, "UnknownStub"),
-        };
-
-        if framed.send(reply).await.is_err() {
-            break;
         }
     }
-    Ok(())
 }
 
 /// A cheap, cloneable handle onto a running [`Imposter`]'s received-call

@@ -4,14 +4,11 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use futures::{SinkExt, StreamExt};
-use ippdme_core::{response, Command, CsyTransform, Message, Point, Tag};
-use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
-use tokio_util::codec::Framed;
-use tracing::{debug, warn};
+use ippdme_core::{response, Command, CsyTransform, Message, Point, Tag, Term};
+use tokio::net::ToSocketAddrs;
 
-use crate::codec::MessageCodec;
 use crate::error::Result;
+use crate::server::IppServer;
 
 /// Simulated latency for `GoTo`, approximating real machine movement time.
 const GO_TO_LATENCY: Duration = Duration::from_millis(500);
@@ -19,54 +16,35 @@ const GO_TO_LATENCY: Duration = Duration::from_millis(500);
 /// A mock I++ DME server. Bind it to an address, then `serve` it to accept
 /// and handle connections until the process exits or the future is dropped.
 pub struct IppMockServer {
-    listener: TcpListener,
+    server: IppServer<MockHandler>,
 }
 
 impl IppMockServer {
     pub async fn bind(addr: impl ToSocketAddrs) -> Result<Self> {
-        let listener = TcpListener::bind(addr).await?;
-        Ok(IppMockServer { listener })
+        let server = IppServer::bind(addr, MockHandler).await?;
+        Ok(IppMockServer { server })
     }
 
     /// The actual bound address — useful when binding to port 0 in tests.
     pub fn local_addr(&self) -> Result<SocketAddr> {
-        Ok(self.listener.local_addr()?)
+        self.server.local_addr()
     }
 
     /// Accept connections forever, handling each on its own task.
     pub async fn serve(self) -> Result<()> {
-        loop {
-            let (stream, peer) = self.listener.accept().await?;
-            debug!(%peer, "mock server: accepted connection");
-            tokio::spawn(async move {
-                if let Err(e) = handle_connection(stream).await {
-                    warn!(%peer, error = %e, "mock server: connection ended with error");
-                }
-            });
-        }
+        self.server.serve().await
     }
 }
 
-async fn handle_connection(stream: TcpStream) -> Result<()> {
-    let mut framed = Framed::new(stream, MessageCodec);
+struct MockHandler;
 
-    while let Some(result) = framed.next().await {
-        let msg = result?;
-        let Message::Command { tag, term } = msg else {
-            // Servers don't expect to receive marked responses from clients.
-            continue;
-        };
-
-        let response = match Command::try_from(&term) {
+impl crate::server::Handler for MockHandler {
+    async fn handle(&self, tag: Tag, term: Term) -> Message {
+        match Command::try_from(&term) {
             Ok(cmd) => handle_command(tag, cmd).await,
             Err(_) => response::error(tag, "UnknownCommand"),
-        };
-
-        if framed.send(response).await.is_err() {
-            break;
         }
     }
-    Ok(())
 }
 
 async fn handle_command(tag: Tag, cmd: Command) -> Message {
@@ -74,10 +52,7 @@ async fn handle_command(tag: Tag, cmd: Command) -> Message {
         Command::StartSession => response::ready(tag),
         Command::EndSession => response::ack(tag),
         Command::GetDmeVersion => {
-            let term = ippdme_core::Term::Call(
-                "DMEVersion".into(),
-                vec![ippdme_core::Term::Str("1.4".into())],
-            );
+            let term = Term::Call("DMEVersion".into(), vec![Term::Str("1.4".into())]);
             response::data(tag, term)
         }
         Command::Home => {
@@ -91,7 +66,7 @@ async fn handle_command(tag: Tag, cmd: Command) -> Message {
         Command::PtMeas(_) => {
             // A real CMM would report the probed coordinates; simulate one.
             let measured = Point::xyz(10.002, 20.001, 5.000).with_normal(0.0, 0.0, 1.0);
-            let term: ippdme_core::Term = Command::PtMeas(measured).into();
+            let term: Term = Command::PtMeas(measured).into();
             response::data(tag, term)
         }
         Command::SetCoordSystem(cs) => {
@@ -103,10 +78,7 @@ async fn handle_command(tag: Tag, cmd: Command) -> Message {
         Command::StopDaemon(_) | Command::StopAllDaemons => response::ack(tag),
         Command::AbortE => response::ack(tag),
         Command::GetErrorInfo(n) => {
-            let term = ippdme_core::Term::Call(
-                "GetErrorInfo".into(),
-                vec![ippdme_core::Term::Str(format!("Error {n}"))],
-            );
+            let term = Term::Call("GetErrorInfo".into(), vec![Term::Str(format!("Error {n}"))]);
             response::data(tag, term)
         }
         Command::ClearAllErrors => response::ack(tag),
@@ -115,64 +87,56 @@ async fn handle_command(tag: Tag, cmd: Command) -> Message {
         | Command::EnumProp(_)
         | Command::EnumAllProp(_) => {
             // The mock doesn't model a real property tree; echo an empty result.
-            response::data(tag, ippdme_core::Term::unit("Prop"))
+            response::data(tag, Term::unit("Prop"))
         }
         Command::SetProp(_) => response::ack(tag),
 
         Command::IsHomed => {
-            let term =
-                ippdme_core::Term::Call("IsHomed".into(), vec![ippdme_core::Term::Number(1.0)]);
+            let term = Term::Call("IsHomed".into(), vec![Term::Number(1.0)]);
             response::data(tag, term)
         }
         Command::EnableUser | Command::DisableUser => response::ack(tag),
         Command::IsUserEnabled => {
-            let term = ippdme_core::Term::Call(
-                "IsUserEnabled".into(),
-                vec![ippdme_core::Term::Number(1.0)],
-            );
+            let term = Term::Call("IsUserEnabled".into(), vec![Term::Number(1.0)]);
             response::data(tag, term)
         }
         Command::GetMachineClass => {
-            let term = ippdme_core::Term::Call(
+            let term = Term::Call(
                 "GetMachineClass".into(),
-                vec![ippdme_core::Term::Ident("CartCMM".into())],
+                vec![Term::Ident("CartCMM".into())],
             );
             response::data(tag, term)
         }
         Command::GetErrStatusE => {
-            let term =
-                ippdme_core::Term::Call("ErrStatus".into(), vec![ippdme_core::Term::Number(0.0)]);
+            let term = Term::Call("ErrStatus".into(), vec![Term::Number(0.0)]);
             response::data(tag, term)
         }
-        Command::GetXtdErrStatus => response::data(tag, ippdme_core::Term::unit("XtdErrStatus")),
+        Command::GetXtdErrStatus => response::data(tag, Term::unit("XtdErrStatus")),
         Command::Get(_) => {
             let args = vec![
-                ippdme_core::Term::Call("X".into(), vec![ippdme_core::Term::Number(10.002)]),
-                ippdme_core::Term::Call("Y".into(), vec![ippdme_core::Term::Number(20.001)]),
-                ippdme_core::Term::Call("Z".into(), vec![ippdme_core::Term::Number(5.000)]),
+                Term::Call("X".into(), vec![Term::Number(10.002)]),
+                Term::Call("Y".into(), vec![Term::Number(20.001)]),
+                Term::Call("Z".into(), vec![Term::Number(5.000)]),
             ];
-            response::data(tag, ippdme_core::Term::call("Get", args))
+            response::data(tag, Term::call("Get", args))
         }
         Command::OnPtMeasReport(_) | Command::OnMoveReportE(_) => response::ack(tag),
 
         Command::GetCoordSystem => {
-            let term = ippdme_core::Term::Call(
-                "CoordSystem".into(),
-                vec![ippdme_core::Term::Ident("PartCsy".into())],
-            );
+            let term = Term::Call("CoordSystem".into(), vec![Term::Ident("PartCsy".into())]);
             response::data(tag, term)
         }
         Command::GetCsyTransformation(_) => {
             let identity = CsyTransform::default();
-            let term = ippdme_core::Term::Call(
+            let term = Term::Call(
                 "GetCsyTransformation".into(),
                 vec![
-                    ippdme_core::Term::Number(identity.x0),
-                    ippdme_core::Term::Number(identity.y0),
-                    ippdme_core::Term::Number(identity.z0),
-                    ippdme_core::Term::Number(identity.theta),
-                    ippdme_core::Term::Number(identity.psi),
-                    ippdme_core::Term::Number(identity.phi),
+                    Term::Number(identity.x0),
+                    Term::Number(identity.y0),
+                    Term::Number(identity.z0),
+                    Term::Number(identity.theta),
+                    Term::Number(identity.psi),
+                    Term::Number(identity.phi),
                 ],
             );
             response::data(tag, term)
@@ -180,11 +144,9 @@ async fn handle_command(tag: Tag, cmd: Command) -> Message {
         Command::SetCsyTransformation(..) => response::ack(tag),
         Command::SaveActiveCoordSystem(_) | Command::LoadCoordSystem(_) => response::ack(tag),
         Command::DeleteCoordSystem(_) => response::ack(tag),
-        Command::EnumCoordSystems => {
-            response::data(tag, ippdme_core::Term::unit("EnumCoordSystems"))
-        }
+        Command::EnumCoordSystems => response::data(tag, Term::unit("EnumCoordSystems")),
         Command::GetNamedCsyTransformation(_) => {
-            response::data(tag, ippdme_core::Term::unit("GetNamedCsyTransformation"))
+            response::data(tag, Term::unit("GetNamedCsyTransformation"))
         }
         Command::SaveNamedCsyTransformation(..) => response::ack(tag),
 

@@ -1,8 +1,7 @@
 use ippdme_core::Term;
 use ippdme_imposter::{Imposter, Predicate, ResponseSpec, Stub};
-use ippdme_net::{IppClient, MessageCodec};
+use ippdme_net::IppClient;
 use tokio::net::TcpStream;
-use tokio_util::codec::Framed;
 
 async fn client_for(imposter: Imposter) -> (IppClient, std::net::SocketAddr) {
     let addr = imposter.local_addr().unwrap();
@@ -67,34 +66,20 @@ stubs:
             - { str: "Collision detected" }
 "#;
     let imposter = Imposter::from_yaml_str(yaml).await.unwrap();
-    let addr = imposter.local_addr().unwrap();
-    tokio::spawn(imposter.serve());
+    let (client, _addr) = client_for(imposter).await;
 
     // Matching args: should get the configured stub response.
-    let stream = TcpStream::connect(addr).await.unwrap();
-    let mut framed = Framed::new(stream, MessageCodec);
-    use futures::{SinkExt, StreamExt};
-    use ippdme_core::{Message, Tag};
-
-    framed
-        .send(Message::Command {
-            tag: Tag(1),
-            term: Term::call("GetErrorInfo", vec![Term::Number(42.0)]),
-        })
+    let resp = client
+        .send(Term::call("GetErrorInfo", vec![Term::Number(42.0)]))
         .await
         .unwrap();
-    let resp = framed.next().await.unwrap().unwrap();
     assert!(resp.is_data());
 
     // Non-matching args: no stub applies, so it falls back to an error.
-    framed
-        .send(Message::Command {
-            tag: Tag(2),
-            term: Term::call("GetErrorInfo", vec![Term::Number(1.0)]),
-        })
+    let resp = client
+        .send(Term::call("GetErrorInfo", vec![Term::Number(1.0)]))
         .await
         .unwrap();
-    let resp = framed.next().await.unwrap().unwrap();
     assert!(resp.is_error());
 }
 

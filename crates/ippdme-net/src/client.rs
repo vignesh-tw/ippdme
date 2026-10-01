@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
 use ippdme_core::{Command, CoordSystem, Message, Point, Tag, Term};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpStream, ToSocketAddrs};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::time::timeout;
@@ -40,9 +41,12 @@ impl IppClient {
         Ok(Self::from_stream(stream))
     }
 
-    /// Wrap an already-connected [`TcpStream`], e.g. for tests against a
-    /// loopback [`crate::mock::IppMockServer`].
-    pub fn from_stream(stream: TcpStream) -> Self {
+    /// Wrap an already-connected byte stream (a [`TcpStream`], a TLS
+    /// stream, an in-memory duplex pipe in tests, ...).
+    pub fn from_stream<S>(stream: S) -> Self
+    where
+        S: AsyncRead + AsyncWrite + Send + 'static,
+    {
         let framed = Framed::new(stream, MessageCodec);
         let (mut sink, mut stream) = framed.split();
 

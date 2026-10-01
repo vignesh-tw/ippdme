@@ -5,8 +5,10 @@ pub mod client;
 pub mod codec;
 pub mod error;
 pub mod mock;
+pub mod server;
 
 pub use client::IppClient;
 pub use codec::MessageCodec;
 pub use error::{NetError, Result};
 pub use mock::IppMockServer;
+pub use server::{serve_connection, Handler, IppServer};
