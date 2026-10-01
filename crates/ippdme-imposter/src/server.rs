@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use ippdme_core::{response, Message, Tag, Term};
-use ippdme_net::{Handler, IppServer};
+use ippdme_net::{Handler, IppServer, TlsServerConfig};
 use tokio::net::ToSocketAddrs;
 
 use crate::config::ImposterConfig;
@@ -25,7 +25,10 @@ pub struct Imposter {
 impl Imposter {
     /// Start building an imposter with no stubs yet.
     pub fn builder() -> ImposterBuilder {
-        ImposterBuilder { stubs: Vec::new() }
+        ImposterBuilder {
+            stubs: Vec::new(),
+            tls: None,
+        }
     }
 
     /// Load an imposter's stubs and port from a YAML file and bind it.
@@ -42,17 +45,29 @@ impl Imposter {
 
     async fn from_config(config: ImposterConfig) -> Result<Self> {
         let port = config.port;
+        let tls = config
+            .tls
+            .clone()
+            .map(|tls| tls.into_server_config())
+            .transpose()?;
         let stubs = config.into_stubs()?;
-        Self::bind(("127.0.0.1", port), stubs).await
+        Self::bind(("127.0.0.1", port), stubs, tls).await
     }
 
-    async fn bind(addr: impl ToSocketAddrs, stubs: Vec<Stub>) -> Result<Self> {
+    async fn bind(
+        addr: impl ToSocketAddrs,
+        stubs: Vec<Stub>,
+        tls: Option<TlsServerConfig>,
+    ) -> Result<Self> {
         let log = Arc::new(Mutex::new(Vec::new()));
         let handler = StubHandler {
             stubs,
             log: log.clone(),
         };
-        let server = IppServer::bind(addr, handler).await?;
+        let server = match tls {
+            Some(tls) => IppServer::bind_tls(addr, handler, tls).await?,
+            None => IppServer::bind(addr, handler).await?,
+        };
         Ok(Imposter { server, log })
     }
 
@@ -119,6 +134,7 @@ impl ImposterHandle {
 /// than loading it from YAML), e.g. inline in a `#[tokio::test]`.
 pub struct ImposterBuilder {
     stubs: Vec<Stub>,
+    tls: Option<TlsServerConfig>,
 }
 
 impl ImposterBuilder {
@@ -127,10 +143,16 @@ impl ImposterBuilder {
         self
     }
 
+    /// Serve TLS 1.3 (or mutual TLS, per `tls`) instead of plain TCP.
+    pub fn tls(mut self, tls: TlsServerConfig) -> Self {
+        self.tls = Some(tls);
+        self
+    }
+
     /// Bind to an explicit address (use `("127.0.0.1", 0)` for an ephemeral
     /// port in tests).
     pub async fn bind(self, addr: impl ToSocketAddrs) -> Result<Imposter> {
-        Imposter::bind(addr, self.stubs).await
+        Imposter::bind(addr, self.stubs, self.tls).await
     }
 }
 
@@ -145,7 +167,7 @@ impl From<StubBuilder> for Stub {
 pub async fn spawn_ephemeral(
     stubs: Vec<Stub>,
 ) -> Result<(SocketAddr, tokio::task::JoinHandle<Result<()>>)> {
-    let imposter = Imposter::bind(("127.0.0.1", 0), stubs).await?;
+    let imposter = Imposter::bind(("127.0.0.1", 0), stubs, None).await?;
     let addr = imposter.local_addr()?;
     let handle = tokio::spawn(imposter.serve());
     Ok((addr, handle))

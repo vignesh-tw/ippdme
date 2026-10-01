@@ -45,6 +45,15 @@ tests/                    Python-level integration tests (pytest) against the mo
   cases (the TUI does *not* currently use this — see below). `allocate_tag()`
   + `send_with_tag()` exist specifically so a caller (the TUI) can log the
   outbound message with its real tag *before* awaiting the response.
+- **`ippdme-net` owns all transport, client and server side.** `IppServer`
+  (`server.rs`) is the single accept/frame/dispatch loop behind a `Handler`
+  trait; `IppMockServer` and the imposter are just handlers on top of it, so
+  neither carries its own `TcpListener`/`Framed` code. `IppClient::from_stream`
+  and `serve_connection` accept any `AsyncRead + AsyncWrite`. The `tls`
+  feature (`tls.rs`, rustls + ring, TLS 1.3 only, optional mTLS) adds
+  `connect_tls` / `bind_tls`; Python, the TUI and the imposter only wire
+  options through to it. Keep it that way: no TLS or socket logic outside
+  `ippdme-net`.
 - **`ippdme-net`'s `IppMockServer`** simulates `GoTo`/`Home` latency (500ms
   sleep) and returns synthetic `PtMeas` coordinates. It's the reference
   fixture for both Rust integration tests and the Python `ippdme.testing`

@@ -11,6 +11,7 @@
 use std::path::Path;
 
 use ippdme_core::Term;
+use ippdme_net::{TlsIdentity, TlsServerConfig};
 use serde::Deserialize;
 
 use crate::error::{ImposterError, Result};
@@ -22,8 +23,29 @@ use crate::stub::Stub;
 #[derive(Debug, Clone, Deserialize)]
 pub struct ImposterConfig {
     pub port: u16,
+    /// Serve TLS 1.3 instead of plain TCP.
+    #[serde(default)]
+    pub tls: Option<TlsConfig>,
     #[serde(default)]
     pub stubs: Vec<StubConfig>,
+}
+
+/// PEM file paths for serving TLS. Setting `client_ca` additionally
+/// requires clients to present a certificate signed by that CA (mutual TLS).
+#[derive(Debug, Clone, Deserialize)]
+pub struct TlsConfig {
+    pub cert: String,
+    pub key: String,
+    #[serde(default)]
+    pub client_ca: Option<String>,
+}
+
+impl TlsConfig {
+    pub fn into_server_config(self) -> Result<TlsServerConfig> {
+        let identity = TlsIdentity::from_files(&self.cert, &self.key)?;
+        let client_ca = self.client_ca.map(std::fs::read).transpose()?;
+        Ok(TlsServerConfig::new(&identity, client_ca.as_deref())?)
+    }
 }
 
 impl ImposterConfig {

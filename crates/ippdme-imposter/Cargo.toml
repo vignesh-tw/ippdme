@@ -12,7 +12,7 @@ path = "src/bin/ippdme-imposter.rs"
 
 [dependencies]
 ippdme-core = { workspace = true }
-ippdme-net = { workspace = true }
+ippdme-net = { workspace = true, features = ["tls"] }
 tokio = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
@@ -25,3 +25,4 @@ serde_yaml_ng = "0.10"
 
 [dev-dependencies]
 tokio = { workspace = true }
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }

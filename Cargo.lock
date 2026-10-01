@@ -520,6 +520,7 @@ version = "0.1.0"
 dependencies = [
  "ippdme-core",
  "ippdme-net",
+ "rcgen",
  "serde",
  "serde_yaml_ng",
  "thiserror 1.0.69",

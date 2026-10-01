@@ -146,6 +146,26 @@ including response sequencing (a stub can fail once, then succeed) and
 `Imposter::handle().received_calls()` for verifying what a client under
 test actually sent.
 
+## TLS
+
+Standard I++ DME is plaintext TCP. `ippdme-net`'s `tls` feature (rustls, TLS
+1.3 only) wraps the same protocol in TLS, with optional mutual TLS. It is
+enabled by default in the Python package, the TUI and the imposter.
+
+- **Rust:** `IppClient::connect_tls(addr, &TlsClientConfig::new(name, ca_pem, identity))`;
+  server side `IppServer::bind_tls` / `IppMockServer::bind_tls` with a
+  `TlsServerConfig` (pass a client CA to require client certificates). Any
+  `AsyncRead + AsyncWrite` stream can also go through `IppClient::from_stream`.
+- **Python:** `IppClient.connect(addr, ca_cert=..., server_name=..., client_cert=..., client_key=...)`
+  and `IppMockServer(port, cert=..., key=..., client_ca=...)`, all PEM file paths.
+- **TUI:** `ippdme-tui --ca-cert ca.pem [--server-name NAME] [--client-cert c.pem --client-key c.key]`
+  (client mode only).
+- **Imposter:** a top-level `tls:` block in the YAML with `cert`, `key` and an
+  optional `client_ca`, or `Imposter::builder().tls(...)` in Rust.
+
+A real CMM will not speak TLS itself; put a TLS-terminating proxy in front of
+it and point the client at the proxy.
+
 ## Protocol essentials
 
 - Transport: plain-text TCP, CRLF line endings.
