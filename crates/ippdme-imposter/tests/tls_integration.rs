@@ -47,7 +47,7 @@ async fn builder_imposter_serves_tls() {
     let client = IppClient::connect_tls(addr, &client_config(&pki))
         .await
         .unwrap();
-    assert!(client.home().await.unwrap().is_ack());
+    client.home().await.unwrap();
 }
 
 #[tokio::test]
@@ -72,7 +72,7 @@ async fn yaml_imposter_serves_tls_from_pem_files() {
     let client = IppClient::connect_tls(addr, &client_config(&pki))
         .await
         .unwrap();
-    assert!(client.home().await.unwrap().is_ack());
+    client.home().await.unwrap();
     std::fs::remove_dir_all(&dir).ok();
 }
 

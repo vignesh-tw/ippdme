@@ -14,6 +14,8 @@ pub enum IppError {
     WrongArgType { func: String, name: String },
     #[error("invalid value for {name:?}: {reason}")]
     InvalidArgument { name: String, reason: String },
+    #[error("server returned an error: {reason}")]
+    ServerError { reason: String },
     #[error("unknown command: {0}")]
     UnknownCommand(String),
 }

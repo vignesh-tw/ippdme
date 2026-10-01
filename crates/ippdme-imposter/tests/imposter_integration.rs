@@ -27,10 +27,9 @@ stubs:
     let imposter = Imposter::from_yaml_str(yaml).await.unwrap();
     let (client, _addr) = client_for(imposter).await;
 
-    let resp = client.pt_meas().await.unwrap();
-    assert!(resp.is_data());
-    assert_eq!(resp.term().get_num_param("X"), Some(10.002));
-    assert_eq!(resp.term().get_num_param("Y"), Some(20.001));
+    let point = client.pt_meas().await.unwrap();
+    assert_eq!(point.x(), Some(10.002));
+    assert_eq!(point.y(), Some(20.001));
 }
 
 #[tokio::test]
@@ -46,7 +45,11 @@ stubs:
     let imposter = Imposter::from_yaml_str(yaml).await.unwrap();
     let (client, _addr) = client_for(imposter).await;
 
-    let resp = client.start_session().await.unwrap();
+    // The raw path keeps the exact reply term, which the typed helper hides.
+    let resp = client
+        .send_command(ippdme_core::Command::StartSession)
+        .await
+        .unwrap();
     assert!(resp.is_ack());
     assert_eq!(resp.term().name(), Some("Ready"));
 }
@@ -96,15 +99,11 @@ async fn stub_sequence_sticks_on_last_response() {
         .unwrap();
     let (client, _addr) = client_for(imposter).await;
 
-    let first = client.go_to(1.0, 2.0, 3.0).await.unwrap();
-    assert!(first.is_error());
-
-    let second = client.go_to(1.0, 2.0, 3.0).await.unwrap();
-    assert!(second.is_ack());
+    assert!(client.go_to(1.0, 2.0, 3.0).await.is_err());
+    client.go_to(1.0, 2.0, 3.0).await.unwrap();
 
     // Sequence exhausted: keeps acking.
-    let third = client.go_to(1.0, 2.0, 3.0).await.unwrap();
-    assert!(third.is_ack());
+    client.go_to(1.0, 2.0, 3.0).await.unwrap();
 }
 
 #[tokio::test]

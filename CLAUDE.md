@@ -34,7 +34,10 @@ tests/                    Python-level integration tests (pytest) against the mo
 
 - **`ippdme-core` is pure, no I/O.** The AST (`Term`, `Message`, `Tag`,
   `Marker`) is generic — any I++ command can round-trip through it even if no
-  typed `Command` variant exists yet (`Command::Raw` is the fallback). Typed
+  typed `Command` variant exists yet (`Command::raw` is the explicit escape
+  hatch; `Command::try_from` is strict and `from_term_lenient` opts in to the
+  `Raw` fallback). Validated argument types live in `values.rs`: constructors
+  reject invalid values, fields are private. Typed
   commands in `commands.rs` are ergonomic sugar on top, not the source of
   truth. When adding a new command, add a `Command` variant + `From`/`TryFrom`
   impls, not a new AST node type.

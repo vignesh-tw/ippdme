@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use ippdme_core::CoordSystem;
+use ippdme_core::{Command, CoordSystem};
 use ippdme_net::{IppClient, NetError, Result as NetResult, TlsClientConfig, TlsIdentity};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -9,7 +9,9 @@ use pyo3::prelude::*;
 use crate::error::to_py_err;
 use crate::response::PyResponse;
 
-/// A connected I++ DME client. Every method blocks the calling Python thread
+/// A connected I++ DME client. Methods return the raw server [`PyResponse`]
+/// (ack, data or error), so tests can assert on error replies too. Every
+/// method blocks the calling Python thread
 /// (with the GIL released) until a correlated response arrives or the
 /// request times out.
 #[pyclass(name = "IppClient")]
@@ -107,32 +109,46 @@ impl PyIppClient {
     }
 
     fn start_session(&self, py: Python<'_>) -> PyResult<PyResponse> {
-        self.block_on(py, |c| async move { c.start_session().await })
+        self.block_on(py, |c| async move {
+            c.send_command(Command::StartSession).await
+        })
     }
 
     fn end_session(&self, py: Python<'_>) -> PyResult<PyResponse> {
-        self.block_on(py, |c| async move { c.end_session().await })
+        self.block_on(
+            py,
+            |c| async move { c.send_command(Command::EndSession).await },
+        )
     }
 
     fn get_dme_version(&self, py: Python<'_>) -> PyResult<PyResponse> {
-        self.block_on(py, |c| async move { c.get_dme_version().await })
+        self.block_on(py, |c| async move {
+            c.send_command(Command::GetDmeVersion).await
+        })
     }
 
     fn home(&self, py: Python<'_>) -> PyResult<PyResponse> {
-        self.block_on(py, |c| async move { c.home().await })
+        self.block_on(py, |c| async move { c.send_command(Command::Home).await })
     }
 
     fn go_to(&self, py: Python<'_>, x: f64, y: f64, z: f64) -> PyResult<PyResponse> {
-        self.block_on(py, move |c| async move { c.go_to(x, y, z).await })
+        self.block_on(py, move |c| async move {
+            c.send_command(Command::go_to(x, y, z)?).await
+        })
     }
 
     fn pt_meas(&self, py: Python<'_>) -> PyResult<PyResponse> {
-        self.block_on(py, |c| async move { c.pt_meas().await })
+        self.block_on(
+            py,
+            |c| async move { c.send_command(Command::pt_meas()).await },
+        )
     }
 
     fn set_coord_system(&self, py: Python<'_>, coord_system: &str) -> PyResult<PyResponse> {
         let cs = parse_coord_system(coord_system)?;
-        self.block_on(py, move |c| async move { c.set_coord_system(cs).await })
+        self.block_on(py, move |c| async move {
+            c.send_command(Command::SetCoordSystem(cs)).await
+        })
     }
 
     /// Send a raw I++ DME term, e.g. `"OnMoveArc(...)"`, for commands not yet

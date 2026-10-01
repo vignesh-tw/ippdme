@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
-use ippdme_core::{Command, CoordSystem, Message, Tag, Term};
+use ippdme_core::{response, Command, CoordSystem, Message, Point, Tag, Term};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpStream, ToSocketAddrs};
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -153,31 +153,51 @@ impl IppClient {
         self.send(cmd.into()).await
     }
 
-    pub async fn start_session(&self) -> Result<Message> {
-        self.send_command(Command::StartSession).await
+    /// Send `cmd` and require an ack; a server `Error(...)` response
+    /// becomes `Err(NetError::Protocol(IppError::ServerError { .. }))`.
+    async fn send_expecting_ack(&self, cmd: Command) -> Result<()> {
+        Ok(response::expect_ack(&self.send_command(cmd).await?)?)
     }
 
-    pub async fn end_session(&self) -> Result<Message> {
-        self.send_command(Command::EndSession).await
+    pub async fn start_session(&self) -> Result<()> {
+        self.send_expecting_ack(Command::StartSession).await
     }
 
-    pub async fn get_dme_version(&self) -> Result<Message> {
-        self.send_command(Command::GetDmeVersion).await
+    pub async fn end_session(&self) -> Result<()> {
+        self.send_expecting_ack(Command::EndSession).await
     }
 
-    pub async fn home(&self) -> Result<Message> {
-        self.send_command(Command::Home).await
+    pub async fn get_dme_version(&self) -> Result<String> {
+        let reply = self.send_command(Command::GetDmeVersion).await?;
+        Ok(response::parse_dme_version(&reply)?)
     }
 
-    pub async fn go_to(&self, x: f64, y: f64, z: f64) -> Result<Message> {
-        self.send_command(Command::go_to(x, y, z)?).await
+    pub async fn home(&self) -> Result<()> {
+        self.send_expecting_ack(Command::Home).await
     }
 
-    pub async fn pt_meas(&self) -> Result<Message> {
-        self.send_command(Command::pt_meas()).await
+    pub async fn go_to(&self, x: f64, y: f64, z: f64) -> Result<()> {
+        self.send_expecting_ack(Command::go_to(x, y, z)?).await
     }
 
-    pub async fn set_coord_system(&self, cs: CoordSystem) -> Result<Message> {
-        self.send_command(Command::SetCoordSystem(cs)).await
+    /// Measure a point at the current position and return what the machine
+    /// reports.
+    pub async fn pt_meas(&self) -> Result<Point> {
+        let reply = self.send_command(Command::pt_meas()).await?;
+        Ok(response::parse_pt_meas(&reply)?)
+    }
+
+    pub async fn set_coord_system(&self, cs: CoordSystem) -> Result<()> {
+        self.send_expecting_ack(Command::SetCoordSystem(cs)).await
+    }
+
+    pub async fn is_homed(&self) -> Result<bool> {
+        let reply = self.send_command(Command::IsHomed).await?;
+        Ok(response::parse_flag(&reply, "IsHomed")?)
+    }
+
+    pub async fn is_user_enabled(&self) -> Result<bool> {
+        let reply = self.send_command(Command::IsUserEnabled).await?;
+        Ok(response::parse_flag(&reply, "IsUserEnabled")?)
     }
 }

@@ -22,7 +22,8 @@ equipment, typically over TCP/IP port `1294`.
 
 See [`docs/SUPPORTED_METHODS.md`](docs/SUPPORTED_METHODS.md) for which I++
 DME protocol methods have typed support today versus which are reachable only
-via the generic `Command::Raw` fallback.
+via the explicit `Command::raw` escape hatch (`Command::try_from` is strict;
+`Command::from_term_lenient` falls back to it).
 
 ## Workspace layout
 

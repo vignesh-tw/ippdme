@@ -49,8 +49,7 @@ async fn client_talks_to_server_over_tls() {
 
     let client_cfg = TlsClientConfig::new("localhost", &ca.pem(), None).unwrap();
     let client = IppClient::connect_tls(addr, &client_cfg).await.unwrap();
-    let reply = client.get_dme_version().await.unwrap();
-    assert!(reply.is_data());
+    assert_eq!(client.get_dme_version().await.unwrap(), "1.4");
 }
 
 #[tokio::test]
@@ -83,7 +82,7 @@ async fn mutual_tls_accepts_known_client_and_rejects_anonymous_one() {
     let with_cert =
         TlsClientConfig::new("localhost", &ca.pem(), Some(&ca.issue("client"))).unwrap();
     let client = IppClient::connect_tls(addr, &with_cert).await.unwrap();
-    assert!(client.get_dme_version().await.unwrap().is_data());
+    assert_eq!(client.get_dme_version().await.unwrap(), "1.4");
 
     // In TLS 1.3 the client can finish its handshake before the server
     // rejects it, so the failure may surface on connect or on first request.
