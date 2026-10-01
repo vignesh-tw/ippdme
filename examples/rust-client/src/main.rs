@@ -13,11 +13,12 @@ use ippdme_core::{response, Command, IppError};
 use ippdme_net::{IppClient, NetError, TlsClientConfig, TlsIdentity};
 
 const USAGE: &str = "\
-Usage: ippdme-example-client [--addr HOST:PORT] [--server-name NAME]
+Usage: ippdme-example-client [--addr HOST:PORT] [--server-name NAME] [--timeout SECONDS]
                              [--ca-cert PEM [--client-cert PEM --client-key PEM]]
 
 Without --ca-cert the connection is plain TCP; with it, TLS 1.3 (and mutual TLS
-when a client certificate and key are given). --server-name defaults to the host.";
+when a client certificate and key are given). --server-name defaults to the host.
+--timeout is how long each request may wait for its reply (default 5).";
 
 struct Options {
     addr: String,
@@ -25,6 +26,7 @@ struct Options {
     ca_cert: Option<String>,
     client_cert: Option<String>,
     client_key: Option<String>,
+    timeout: Option<std::time::Duration>,
 }
 
 fn parse_args() -> Result<Options, String> {
@@ -34,6 +36,7 @@ fn parse_args() -> Result<Options, String> {
         ca_cert: None,
         client_cert: None,
         client_key: None,
+        timeout: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
@@ -44,6 +47,16 @@ fn parse_args() -> Result<Options, String> {
             "--ca-cert" => opts.ca_cert = Some(value()?),
             "--client-cert" => opts.client_cert = Some(value()?),
             "--client-key" => opts.client_key = Some(value()?),
+            "--timeout" => {
+                let v = value()?;
+                let secs: f64 = v
+                    .parse()
+                    .map_err(|_| format!("--timeout needs seconds, got {v:?}"))?;
+                opts.timeout = Some(
+                    std::time::Duration::try_from_secs_f64(secs)
+                        .map_err(|_| "--timeout must not be negative".to_string())?,
+                );
+            }
             "-h" | "--help" => return Err(String::new()),
             other => return Err(format!("unknown argument {other:?}")),
         }
@@ -97,13 +110,16 @@ async fn main() -> ExitCode {
         }
     };
 
-    let client = match connect(&opts).await {
+    let mut client = match connect(&opts).await {
         Ok(client) => client,
         Err(e) => {
             eprintln!("could not connect to {}: {e}", opts.addr);
             return ExitCode::FAILURE;
         }
     };
+    if let Some(timeout) = opts.timeout {
+        client.set_default_timeout(timeout);
+    }
     println!("connected to {}", opts.addr);
 
     // Typed helpers: commands are built and validated by ippdme-core, and

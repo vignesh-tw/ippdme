@@ -11,3 +11,6 @@ publish = false
 ippdme-core = { workspace = true }
 ippdme-net = { workspace = true, features = ["tls"] }
 tokio = { workspace = true }
+
+[dev-dependencies]
+ippdme-imposter = { path = "../../crates/ippdme-imposter" }

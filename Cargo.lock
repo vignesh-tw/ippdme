@@ -519,6 +519,7 @@ name = "ippdme-example-client"
 version = "0.1.0"
 dependencies = [
  "ippdme-core",
+ "ippdme-imposter",
  "ippdme-net",
  "tokio",
 ]
