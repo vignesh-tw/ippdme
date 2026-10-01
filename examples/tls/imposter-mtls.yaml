@@ -1,0 +1,56 @@
+# The same machine over mutual TLS on port 1296: clients must present a
+# certificate signed by the example CA (examples/tls/certs/client.pem).
+# Run from the repo root, after examples/tls/make-certs.sh:
+#   cargo run -p ippdme-imposter --bin ippdme-imposter -- examples/tls/imposter-mtls.yaml
+# Certificate paths are relative to the directory you run it from.
+
+port: 1296
+
+tls:
+  cert: examples/tls/certs/server.pem
+  key: examples/tls/certs/server.key
+  client_ca: examples/tls/certs/ca.pem
+
+stubs:
+  - predicate:
+      call: StartSession
+    responses:
+      - ack: Ready
+
+  - predicate:
+      call: EndSession
+    responses:
+      - ack: true
+
+  - predicate:
+      call: GetDMEVersion
+    responses:
+      - data:
+          call: DMEVersion
+          args:
+            - { str: "1.5" }
+
+  - predicate:
+      call: Home
+    responses:
+      - ack: true
+        after_ms: 500
+
+  - predicate:
+      call: GoTo
+    responses:
+      - ack: true
+        after_ms: 500
+
+  - predicate:
+      call: PtMeas
+    responses:
+      - data:
+          call: PtMeas
+          args:
+            - { name: X, value: 10.002 }
+            - { name: Y, value: 20.001 }
+            - { name: Z, value: 5.000 }
+            - { name: I, value: 0 }
+            - { name: J, value: 0 }
+            - { name: K, value: 1 }
