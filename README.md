@@ -117,7 +117,7 @@ should respond to specific calls in a YAML file, no Rust required, then
 point any I++ DME client at it.
 
 ```bash
-cargo run -p ippdme-imposter --bin ippdme-imposter -- crates/ippdme-imposter/examples/imposter.yaml
+cargo run -p ippdme-imposter --bin ippdme-imposter -- examples/plain/imposter.yaml
 ```
 
 ```yaml

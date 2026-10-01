@@ -1,0 +1,55 @@
+# A misbehaving virtual CMM, for testing how a client copes with failures.
+#   cargo run -p ippdme-imposter --bin ippdme-imposter -- examples/plain/faults.yaml
+# Same port as imposter.yaml (1294), so run one or the other.
+
+port: 1294
+
+stubs:
+  - predicate:
+      call: StartSession
+    responses:
+      - ack: Ready
+
+  - predicate:
+      call: EndSession
+    responses:
+      - ack: true
+
+  - predicate:
+      call: Home
+    responses:
+      - ack: true
+
+  # The first GoTo reports a collision, every later one succeeds: a retry
+  # test. (The last response in a list repeats once the list is used up.)
+  - predicate:
+      call: GoTo
+    responses:
+      - error: CollisionDetected
+      - ack: true
+
+  # Slow: replies after 8 seconds, longer than the client's default 5s request
+  # timeout, so the client reports a timeout.
+  - predicate:
+      call: PtMeas
+    responses:
+      - data:
+          call: PtMeas
+          args:
+            - { name: X, value: 1.0 }
+            - { name: Y, value: 2.0 }
+            - { name: Z, value: 3.0 }
+        after_ms: 8000
+
+  # The connection is closed without a reply: the client sees ConnectionClosed.
+  - predicate:
+      call: IsHomed
+    responses:
+      - drop: true
+
+  # A line that isn't valid I++ DME. The client can't parse it and its
+  # connection ends.
+  - predicate:
+      call: GetMachineClass
+    responses:
+      - malformed: "this is not an I++ line"

@@ -1,0 +1,78 @@
+# A well-behaved virtual CMM. From the repo root:
+#   cargo run -p ippdme-imposter --bin ippdme-imposter -- examples/plain/imposter.yaml
+# then point any I++ DME client at 127.0.0.1:1294 (see examples/README.md).
+#
+# Predicates match on the call name (and optionally exact args); `responses`
+# are replayed in order and the last one repeats. A call with no matching stub
+# is answered with Error(UnknownStub).
+
+port: 1294
+
+stubs:
+  - predicate:
+      call: StartSession
+    responses:
+      - ack: Ready
+
+  - predicate:
+      call: EndSession
+    responses:
+      - ack: true
+
+  - predicate:
+      call: GetDMEVersion
+    responses:
+      - data:
+          call: DMEVersion
+          args:
+            - { str: "1.5" }
+
+  - predicate:
+      call: EnableUser
+    responses:
+      - ack: true
+
+  - predicate:
+      call: IsHomed
+    responses:
+      - data:
+          call: IsHomed
+          args: [1]
+
+  # Movement takes a moment on a real machine; after_ms simulates it.
+  - predicate:
+      call: Home
+    responses:
+      - ack: true
+        after_ms: 500
+
+  - predicate:
+      call: GoTo
+    responses:
+      - ack: true
+        after_ms: 500
+
+  # Any PtMeas(...) gets the same measured point back.
+  - predicate:
+      call: PtMeas
+    responses:
+      - data:
+          call: PtMeas
+          args:
+            - { name: X, value: 10.002 }
+            - { name: Y, value: 20.001 }
+            - { name: Z, value: 5.000 }
+            - { name: I, value: 0 }
+            - { name: J, value: 0 }
+            - { name: K, value: 1 }
+        after_ms: 200
+
+  # Exact-args predicate: only GetErrorInfo(42) matches.
+  - predicate:
+      call: GetErrorInfo
+      args: [42]
+    responses:
+      - data:
+          call: GetErrorInfo
+          args:
+            - { str: "Collision detected on probe head" }

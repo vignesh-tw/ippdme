@@ -6,7 +6,7 @@
 //! `serve` it. Stubs can be built programmatically in Rust or loaded from a
 //! YAML file — both go through the same [`Stub`]/[`Predicate`]/
 //! [`ResponseSpec`] types, so the two configuration surfaces can never drift
-//! apart. See `examples/imposter.yaml` for the YAML shape.
+//! apart. See `examples/plain/imposter.yaml` for the YAML shape.
 
 pub mod config;
 pub mod error;
