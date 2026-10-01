@@ -6,6 +6,7 @@ pub mod codec;
 pub mod error;
 pub mod mock;
 pub mod server;
+pub mod tap;
 #[cfg(feature = "tls")]
 pub mod tls;
 
@@ -14,5 +15,6 @@ pub use codec::MessageCodec;
 pub use error::{NetError, Result};
 pub use mock::{IppMockServer, MockConfig};
 pub use server::{serve_connection, Action, Handler, IppServer};
+pub use tap::{IppTap, TapDirection, TapEvent};
 #[cfg(feature = "tls")]
 pub use tls::{TlsClientConfig, TlsIdentity, TlsServerConfig};
