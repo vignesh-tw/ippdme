@@ -105,7 +105,7 @@ fn handle_key(app: &mut App, code: KeyCode) {
         match code {
             KeyCode::Esc => app.focus = Focus::Sidebar,
             KeyCode::Tab => app.cycle_focus(),
-            KeyCode::Enter => app.send_raw_input(),
+            KeyCode::Enter => app.submit_input(),
             KeyCode::Backspace => {
                 app.input.pop();
             }
@@ -121,6 +121,7 @@ fn handle_key(app: &mut App, code: KeyCode) {
         KeyCode::Char('c') => app.connect_or_disconnect(),
         KeyCode::Char('m') => app.toggle_mode(),
         KeyCode::Char('e') => app.export_session(),
+        KeyCode::Char('r') => app.toggle_raw_line_mode(),
         KeyCode::Char('h') if app.conn == app::ConnState::Disconnected && !app.connecting => {
             app.host.clear();
             app.editing_addr = Some(AddrField::Host);

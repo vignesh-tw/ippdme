@@ -3,7 +3,7 @@ use std::io::Write as _;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use ippdme_core::{parse_term_str, Command, Message, Tag};
+use ippdme_core::{leading_tag, parse_term_str, Command, Message, Tag};
 use ippdme_net::{IppClient, IppMockServer, NetError};
 
 use crate::tls::TlsOptions;
@@ -57,6 +57,8 @@ pub enum AppEvent {
     },
     Connected(Arc<IppClient>),
     ConnectFailed(String),
+    /// A raw line without a tag went out; there is no reply to wait for.
+    RawLineSent,
     MockServerStarted {
         port: u16,
         handle: tokio::task::JoinHandle<ippdme_net::Result<()>>,
@@ -77,6 +79,9 @@ pub struct App {
     pub log: Vec<LogEntry>,
     pub selected_log: Option<usize>,
     pub input: String,
+    /// When set, the input box sends whole lines exactly as typed (tag
+    /// included, no parsing) instead of parsing a term.
+    pub raw_line_mode: bool,
     pub focus: Focus,
     pub editing_addr: Option<AddrField>,
     pub status: String,
@@ -108,6 +113,7 @@ impl App {
             log: Vec::new(),
             selected_log: None,
             input: String::new(),
+            raw_line_mode: false,
             focus: Focus::Sidebar,
             editing_addr: None,
             status: "Disconnected".to_string(),
@@ -199,6 +205,9 @@ impl App {
                 self.connecting = false;
                 let secure = if self.tls.is_some() { " (TLS)" } else { "" };
                 self.status = format!("Connected to {}{secure}", self.addr());
+            }
+            AppEvent::RawLineSent => {
+                self.status = "Sent a line without a tag: not waiting for a reply".to_string();
             }
             AppEvent::ConnectFailed(err) => {
                 self.connecting = false;
@@ -339,6 +348,66 @@ impl App {
         }
     }
 
+    pub fn toggle_raw_line_mode(&mut self) {
+        self.raw_line_mode = !self.raw_line_mode;
+        self.status = if self.raw_line_mode {
+            "Raw line input: lines are sent exactly as typed".to_string()
+        } else {
+            "Command input: terms are parsed and tagged for you".to_string()
+        };
+    }
+
+    /// Send what is in the input box, in whichever input mode is active.
+    pub fn submit_input(&mut self) {
+        if self.raw_line_mode {
+            self.send_raw_line();
+        } else {
+            self.send_raw_input();
+        }
+    }
+
+    /// Send the input as one line, verbatim: no parsing and no tag added, so
+    /// it can be malformed on purpose. Like typing into `nc`.
+    fn send_raw_line(&mut self) {
+        let line = self.input.trim_end().to_string();
+        if line.is_empty() {
+            return;
+        }
+        let Some(client) = self.client.clone() else {
+            let reason = self.not_connected_reason();
+            self.push_denied(reason);
+            return;
+        };
+        let tag = leading_tag(&line);
+        self.log.push(LogEntry {
+            direction: Direction::Out,
+            tag: tag.map(|t| t.0),
+            marker: None,
+            text: line.clone(),
+            unix_ms: Self::now_ms(),
+            latency_ms: None,
+        });
+        self.input.clear();
+        let tx = self.app_tx.clone();
+        tokio::spawn(async move {
+            let started = Instant::now();
+            let event = match client.send_line(&line).await {
+                Ok(Some(reply)) => AppEvent::CommandResult {
+                    tag: reply.tag(),
+                    started,
+                    result: Ok(reply),
+                },
+                Ok(None) => AppEvent::RawLineSent,
+                Err(e) => AppEvent::CommandResult {
+                    tag: tag.unwrap_or(Tag(0)),
+                    started,
+                    result: Err(e),
+                },
+            };
+            let _ = tx.send(event);
+        });
+    }
+
     pub fn send_raw_input(&mut self) {
         let text = self.input.trim().to_string();
         if text.is_empty() {
@@ -428,5 +497,81 @@ impl App {
             self.handle_app_event(ev);
         }
         Duration::from_millis(100)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tick until `done` holds, or fail after a couple of seconds.
+    async fn tick_until(app: &mut App, done: impl Fn(&App) -> bool) {
+        for _ in 0..200 {
+            app.tick();
+            if done(app) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("condition not reached; log: {:?}", app.status);
+    }
+
+    async fn connected_app() -> App {
+        let mut app = App::new(None);
+        app.mode = Mode::MockServer;
+        app.port = "0".to_string();
+        app.connect_or_disconnect();
+        tick_until(&mut app, |a| a.conn == ConnState::Connected).await;
+        app
+    }
+
+    #[tokio::test]
+    async fn raw_line_mode_sends_the_line_verbatim_and_logs_the_reply() {
+        let mut app = connected_app().await;
+        app.toggle_raw_line_mode();
+        app.input = "00042 StartSession()".to_string();
+        app.submit_input();
+        assert!(app.input.is_empty());
+
+        tick_until(&mut app, |a| {
+            a.log.iter().any(|e| e.direction == Direction::In)
+        })
+        .await;
+        let sent = &app.log[0];
+        assert_eq!((sent.direction, sent.tag), (Direction::Out, Some(42)));
+        assert_eq!(sent.text, "00042 StartSession()");
+        let reply = app
+            .log
+            .iter()
+            .find(|e| e.direction == Direction::In)
+            .unwrap();
+        assert_eq!((reply.tag, reply.marker), (Some(42), Some('#')));
+    }
+
+    #[tokio::test]
+    async fn raw_line_without_a_tag_is_sent_but_not_awaited() {
+        let mut app = connected_app().await;
+        app.toggle_raw_line_mode();
+        app.input = "this is not a protocol line".to_string();
+        app.submit_input();
+
+        tick_until(&mut app, |a| a.status.contains("not waiting")).await;
+        assert_eq!(app.log.len(), 1);
+        assert_eq!(app.log[0].text, "this is not a protocol line");
+        assert_eq!(app.log[0].tag, None);
+    }
+
+    #[tokio::test]
+    async fn command_mode_still_parses_terms_and_adds_the_tag() {
+        let mut app = connected_app().await;
+        app.input = "StartSession()".to_string();
+        app.submit_input();
+
+        tick_until(&mut app, |a| {
+            a.log.iter().any(|e| e.direction == Direction::In)
+        })
+        .await;
+        assert_eq!(app.log[0].tag, Some(1));
+        assert_eq!(app.log[0].text, "StartSession()");
     }
 }

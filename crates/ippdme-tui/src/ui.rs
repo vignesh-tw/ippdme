@@ -173,10 +173,18 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(border_style)
-        .title(" Raw command (e.g. GoTo(X(10.0), Y(20.0), Z(5.0))) ");
+        .title(if app.raw_line_mode {
+            " Raw line, sent exactly as typed (e.g. 00001 StartSession()) "
+        } else {
+            " Raw command (e.g. GoTo(X(10.0), Y(20.0), Z(5.0))) "
+        });
     let text = if app.input.is_empty() && app.focus != Focus::Input {
         Span::styled(
-            "Press Tab to focus, then type a raw I++ term and Enter to send",
+            if app.raw_line_mode {
+                "Press Tab to focus, then type a full line, tag included, and Enter to send it verbatim"
+            } else {
+                "Press Tab to focus, then type a raw I++ term and Enter to send"
+            },
             Style::default().fg(Color::DarkGray),
         )
     } else {
@@ -192,7 +200,7 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_help(f: &mut Frame, area: Rect) {
     let help = "Tab: switch focus | ↑/↓: navigate | Enter: send | c: connect/disconnect | \
-                m: toggle mode | h/p: edit host/port | e: export session | q/Esc: quit";
+                m: toggle mode | r: raw line input | h/p: edit host/port | e: export | q/Esc: quit";
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
             help,
