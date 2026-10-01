@@ -200,3 +200,28 @@ async fn send_line_rejects_embedded_line_breaks() {
         .await
         .is_err());
 }
+
+#[tokio::test]
+async fn dropping_the_client_closes_the_connection() {
+    use tokio::io::AsyncReadExt;
+
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let client = IppClient::connect(addr).await.unwrap();
+    let (mut server_side, _) = listener.accept().await.unwrap();
+
+    drop(client);
+
+    // The server end sees the stream finish, instead of waiting forever.
+    let mut buf = [0u8; 16];
+    let n = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        server_side.read(&mut buf),
+    )
+    .await
+    .expect("connection should close when the client is dropped")
+    .unwrap();
+    assert_eq!(n, 0);
+}

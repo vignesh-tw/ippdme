@@ -38,6 +38,16 @@ pub struct IppClient {
     closed: Arc<AtomicBool>,
     events: broadcast::Sender<Message>,
     default_timeout: Duration,
+    reader: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for IppClient {
+    /// Close the connection. The writer task ends when `write_tx` is dropped;
+    /// the reader task would otherwise keep its half of the socket open
+    /// until the server hung up, leaking the connection.
+    fn drop(&mut self) {
+        self.reader.abort();
+    }
 }
 
 impl IppClient {
@@ -104,7 +114,7 @@ impl IppClient {
         let pending_reader = pending.clone();
         let events_reader = events.clone();
         let closed_reader = closed.clone();
-        tokio::spawn(async move {
+        let reader = tokio::spawn(async move {
             while let Some(result) = stream.next().await {
                 match result {
                     Ok(msg) => {
@@ -131,6 +141,7 @@ impl IppClient {
             closed,
             events,
             default_timeout: DEFAULT_TIMEOUT,
+            reader,
         }
     }
 
