@@ -1,6 +1,6 @@
 //! Postman-style preset command collections, grouped by category.
 
-use ippdme_core::{Command, CoordSystem};
+use ippdme_core::{Command, CoordSystem, ToolName};
 
 #[derive(Clone)]
 pub struct Preset {
@@ -67,6 +67,20 @@ pub fn default_presets() -> Vec<PresetCategory> {
                 Preset {
                     label: "SetCoordSystem(PCS)",
                     build: || Command::SetCoordSystem(CoordSystem::Pcs),
+                },
+                Preset {
+                    label: "EnumTools()",
+                    build: || Command::EnumTools,
+                },
+                Preset {
+                    label: "Tool()",
+                    build: || Command::Tool,
+                },
+                Preset {
+                    label: "ChangeTool(\"RefTool\")",
+                    build: || {
+                        Command::ChangeTool(ToolName::new("RefTool").expect("valid tool name"))
+                    },
                 },
                 Preset {
                     label: "GetCoordSystem()",

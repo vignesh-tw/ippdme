@@ -7,7 +7,10 @@
 
 use crate::ast::Term;
 use crate::error::{IppError, Result};
-pub use crate::values::{CoordSystem, CoordSystemName, CsyTransform, CsyTransformKind, Point};
+pub use crate::values::{
+    CoordSystem, CoordSystemName, CsyTransform, CsyTransformKind, Point, ToolAlignment, ToolName,
+    UnitVector,
+};
 
 /// Strongly-typed commands sent from a client to a CMM/gateway.
 #[derive(Debug, Clone, PartialEq)]
@@ -58,6 +61,25 @@ pub enum Command {
     OnPtMeasReport(Vec<Term>),
     /// Start a daemon reporting machine position while it moves.
     OnMoveReportE(Vec<Term>),
+
+    // --- Tool handling (spec 6.3.2.15 - 6.3.2.23) ---
+    /// Select the pointer to the currently active tool.
+    Tool,
+    /// Look up a tool by name; the result is available as `FoundTool()`.
+    FindTool(ToolName),
+    FoundTool,
+    /// Change to the named tool (probe changer or manual).
+    ChangeTool(ToolName),
+    /// Tell the server to assume the named tool is already active.
+    SetTool(ToolName),
+    /// Orient the tool along one or two direction vectors.
+    AlignTool(ToolAlignment),
+    /// Pointer to the GoTo parameter block.
+    GoToPar,
+    /// Pointer to the PtMeas parameter block.
+    PtMeasPar,
+    /// Query the names of the available tools.
+    EnumTools,
 
     // --- CartCMM methods (spec 6.3.3) ---
     GetCoordSystem,
@@ -144,6 +166,16 @@ impl From<Command> for Term {
             Command::OnPtMeasReport(args) => Term::call("OnPtMeasReport", args),
             Command::OnMoveReportE(args) => Term::call("OnMoveReportE", args),
 
+            Command::Tool => Term::unit("Tool"),
+            Command::FindTool(name) => Term::call("FindTool", vec![Term::Str(name.into())]),
+            Command::FoundTool => Term::unit("FoundTool"),
+            Command::ChangeTool(name) => Term::call("ChangeTool", vec![Term::Str(name.into())]),
+            Command::SetTool(name) => Term::call("SetTool", vec![Term::Str(name.into())]),
+            Command::AlignTool(alignment) => Term::call("AlignTool", alignment.to_args()),
+            Command::GoToPar => Term::unit("GoToPar"),
+            Command::PtMeasPar => Term::unit("PtMeasPar"),
+            Command::EnumTools => Term::unit("EnumTools"),
+
             Command::GetCoordSystem => Term::unit("GetCoordSystem"),
             Command::GetCsyTransformation(kind) => Term::call(
                 "GetCsyTransformation",
@@ -211,6 +243,13 @@ fn name_arg(term: &Term, func: &str) -> Result<CoordSystemName> {
     }
 }
 
+fn tool_arg(term: &Term, func: &str) -> Result<ToolName> {
+    match term.args().first() {
+        Some(Term::Str(s)) => ToolName::new(s.as_str()),
+        _ => Err(wrong_type(func, "tool_name")),
+    }
+}
+
 /// The six numeric terms after the first argument, as a transformation.
 fn transform_arg(term: &Term, func: &str, name: &str) -> Result<CsyTransform> {
     CsyTransform::from_terms(term.args().get(1..).unwrap_or(&[]))?
@@ -265,6 +304,19 @@ impl TryFrom<&Term> for Command {
             "Get" => Command::Get(term.args().to_vec()),
             "OnPtMeasReport" => Command::OnPtMeasReport(term.args().to_vec()),
             "OnMoveReportE" => Command::OnMoveReportE(term.args().to_vec()),
+
+            "Tool" => Command::Tool,
+            "FindTool" => Command::FindTool(tool_arg(term, name)?),
+            "FoundTool" => Command::FoundTool,
+            "ChangeTool" => Command::ChangeTool(tool_arg(term, name)?),
+            "SetTool" => Command::SetTool(tool_arg(term, name)?),
+            "AlignTool" => Command::AlignTool(
+                ToolAlignment::from_terms(term.args())?
+                    .ok_or_else(|| wrong_type(name, "vectors/angles"))?,
+            ),
+            "GoToPar" => Command::GoToPar,
+            "PtMeasPar" => Command::PtMeasPar,
+            "EnumTools" => Command::EnumTools,
 
             "GetCoordSystem" => Command::GetCoordSystem,
             "GetCsyTransformation" => Command::GetCsyTransformation(kind_arg(term, name)?),
@@ -454,6 +506,56 @@ mod tests {
     fn invalid_coord_system_name_from_the_wire_is_rejected() {
         let term = Term::call("LoadCoordSystem", vec![Term::Str("caf\u{e9}".into())]);
         assert!(Command::try_from(&term).is_err());
+    }
+
+    #[test]
+    fn tool_commands_round_trip() {
+        let name = ToolName::new("Conf1Tip1").unwrap();
+        for cmd in [
+            Command::Tool,
+            Command::FoundTool,
+            Command::GoToPar,
+            Command::PtMeasPar,
+            Command::EnumTools,
+            Command::FindTool(name.clone()),
+            Command::ChangeTool(name.clone()),
+            Command::SetTool(name),
+        ] {
+            let term: Term = cmd.clone().into();
+            assert_eq!(Command::try_from(&term).unwrap(), cmd, "{term}");
+        }
+        let term: Term = Command::ChangeTool(ToolName::new("Tool2").unwrap()).into();
+        assert_eq!(term.to_string(), "ChangeTool(\"Tool2\")");
+    }
+
+    #[test]
+    fn align_tool_round_trips_with_one_and_two_vectors() {
+        let up = UnitVector::new(0.0, 0.0, 1.0).unwrap();
+        let right = UnitVector::new(1.0, 0.0, 0.0).unwrap();
+        let one = ToolAlignment::primary(up, 5.0).unwrap();
+        let two = one.with_secondary(right, 2.0).unwrap();
+        for alignment in [one, two] {
+            let term: Term = Command::AlignTool(alignment).into();
+            assert_eq!(
+                Command::try_from(&term).unwrap(),
+                Command::AlignTool(alignment)
+            );
+        }
+        let term: Term = Command::AlignTool(one).into();
+        assert_eq!(term.to_string(), "AlignTool(0.0, 0.0, 1.0, 5.0)");
+    }
+
+    #[test]
+    fn align_tool_rejects_bad_shapes_and_values() {
+        for bad in [
+            "AlignTool(0, 0, 1)",
+            "AlignTool(0, 0, 1, 5, 6)",
+            "AlignTool(0, 0, 3, 5)",
+            "AlignTool(0, 0, 1, -5)",
+        ] {
+            let term = crate::parse_term_str(bad).unwrap();
+            assert!(Command::try_from(&term).is_err(), "{bad}");
+        }
     }
 
     #[test]

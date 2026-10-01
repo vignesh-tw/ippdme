@@ -119,3 +119,37 @@ async fn is_homed_and_user_enabled_parse_flags() {
     assert!(client.is_homed().await.unwrap());
     assert!(client.is_user_enabled().await.unwrap());
 }
+
+#[tokio::test]
+async fn tool_commands_are_handled_by_the_mock() {
+    use ippdme_core::{Command, ToolAlignment, ToolName, UnitVector};
+
+    let client = connected_client().await;
+    let tool = ToolName::new("RefTool").unwrap();
+    for cmd in [
+        Command::Tool,
+        Command::FindTool(tool.clone()),
+        Command::FoundTool,
+        Command::ChangeTool(tool.clone()),
+        Command::SetTool(tool),
+        Command::GoToPar,
+        Command::PtMeasPar,
+    ] {
+        assert!(
+            client.send_command(cmd.clone()).await.unwrap().is_ack(),
+            "{cmd:?}"
+        );
+    }
+
+    let names = client.send_command(Command::EnumTools).await.unwrap();
+    assert!(names.is_data());
+    assert_eq!(names.term().args().len(), 3);
+
+    let up = UnitVector::new(0.0, 0.0, 1.0).unwrap();
+    let alignment = ToolAlignment::primary(up, 5.0).unwrap();
+    let reached = client
+        .send_command(Command::AlignTool(alignment))
+        .await
+        .unwrap();
+    assert!(reached.is_data());
+}

@@ -16,6 +16,21 @@ fn invalid(name: &str, reason: impl Into<String>) -> IppError {
     }
 }
 
+/// How far a direction vector's length may differ from 1. Machines report
+/// directions rounded to a few decimals, so this is deliberately loose.
+pub const NORMAL_TOLERANCE: f64 = 1e-3;
+
+fn check_unit(name: &str, i: f64, j: f64, k: f64) -> Result<()> {
+    let len = (i * i + j * j + k * k).sqrt();
+    if (len - 1.0).abs() > NORMAL_TOLERANCE {
+        return Err(invalid(
+            name,
+            format!("I, J, K must be a unit vector, length is {len}"),
+        ));
+    }
+    Ok(())
+}
+
 fn finite(name: &str, v: f64) -> Result<f64> {
     if v.is_finite() {
         Ok(v)
@@ -88,75 +103,99 @@ impl CsyTransformKind {
     }
 }
 
-/// The name of a saved work piece coordinate system. The wire format has no
-/// string escaping, so a name must be non-empty printable ASCII without a
-/// double quote, at most [`CoordSystemName::MAX_LEN`] characters.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Serialize, serde::Deserialize),
-    serde(try_from = "String", into = "String")
-)]
-pub struct CoordSystemName(String);
+/// Check a name that goes inside a quoted string. The wire format has no
+/// string escaping, so it must be non-empty printable ASCII without a double
+/// quote, at most [`MAX_NAME_LEN`] characters.
+fn validate_name(what: &str, name: &str) -> Result<()> {
+    if name.is_empty() {
+        return Err(invalid(what, "must not be empty"));
+    }
+    if name.len() > MAX_NAME_LEN {
+        return Err(invalid(
+            what,
+            format!("must be at most {MAX_NAME_LEN} characters"),
+        ));
+    }
+    if let Some(c) = name
+        .chars()
+        .find(|c| (!c.is_ascii_graphic() && *c != ' ') || *c == '"')
+    {
+        return Err(invalid(
+            what,
+            format!("must be printable ASCII without '\"', found {c:?}"),
+        ));
+    }
+    Ok(())
+}
 
-impl CoordSystemName {
-    pub const MAX_LEN: usize = 255;
+pub const MAX_NAME_LEN: usize = 255;
 
-    pub fn new(name: impl Into<String>) -> Result<Self> {
-        let name = name.into();
-        if name.is_empty() {
-            return Err(invalid("name", "must not be empty"));
+macro_rules! name_type {
+    ($(#[$doc:meta])* $name:ident, $what:literal) => {
+        $(#[$doc])*
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[cfg_attr(
+            feature = "serde",
+            derive(serde::Serialize, serde::Deserialize),
+            serde(try_from = "String", into = "String")
+        )]
+        pub struct $name(String);
+
+        impl $name {
+            pub fn new(name: impl Into<String>) -> Result<Self> {
+                let name = name.into();
+                validate_name($what, &name)?;
+                Ok($name(name))
+            }
+
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
         }
-        if name.len() > Self::MAX_LEN {
-            return Err(invalid(
-                "name",
-                format!("must be at most {} characters", Self::MAX_LEN),
-            ));
+
+        impl TryFrom<String> for $name {
+            type Error = IppError;
+
+            fn try_from(name: String) -> Result<Self> {
+                Self::new(name)
+            }
         }
-        if let Some(c) = name
-            .chars()
-            .find(|c| (!c.is_ascii_graphic() && *c != ' ') || *c == '"')
-        {
-            return Err(invalid(
-                "name",
-                format!("must be printable ASCII without '\"', found {c:?}"),
-            ));
+
+        impl TryFrom<&str> for $name {
+            type Error = IppError;
+
+            fn try_from(name: &str) -> Result<Self> {
+                Self::new(name)
+            }
         }
-        Ok(CoordSystemName(name))
-    }
 
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
+        impl From<$name> for String {
+            fn from(name: $name) -> String {
+                name.0
+            }
+        }
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(&self.0)
+            }
+        }
+    };
 }
 
-impl TryFrom<String> for CoordSystemName {
-    type Error = IppError;
+name_type!(
+    /// The name of a saved work piece coordinate system (see
+    /// [`validate_name`] for the allowed characters).
+    CoordSystemName,
+    "name"
+);
 
-    fn try_from(name: String) -> Result<Self> {
-        Self::new(name)
-    }
-}
-
-impl TryFrom<&str> for CoordSystemName {
-    type Error = IppError;
-
-    fn try_from(name: &str) -> Result<Self> {
-        Self::new(name)
-    }
-}
-
-impl From<CoordSystemName> for String {
-    fn from(name: CoordSystemName) -> String {
-        name.0
-    }
-}
-
-impl std::fmt::Display for CoordSystemName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+name_type!(
+    /// The name of a tool, as used by `FindTool`, `ChangeTool` and
+    /// `SetTool` (see [`validate_name`] for the allowed characters).
+    ToolName,
+    "tool name"
+);
 
 /// The `(X0, Y0, Z0, Theta, Psi, Phi)` Euler-angle transformation of a
 /// coordinate system relative to the machine coordinate system (spec 6.3.3,
@@ -288,9 +327,8 @@ pub struct Point {
 }
 
 impl Point {
-    /// How far a normal's length may differ from 1. Machines report
-    /// directions rounded to a few decimals, so this is deliberately loose.
-    pub const NORMAL_TOLERANCE: f64 = 1e-3;
+    /// How far a normal's length may differ from 1; see [`NORMAL_TOLERANCE`].
+    pub const NORMAL_TOLERANCE: f64 = NORMAL_TOLERANCE;
 
     /// A point with all three coordinates set and no normal.
     pub fn xyz(x: f64, y: f64, z: f64) -> Result<Self> {
@@ -321,15 +359,7 @@ impl Point {
         };
         match (point.i, point.j, point.k) {
             (None, None, None) => {}
-            (Some(i), Some(j), Some(k)) => {
-                let len = (i * i + j * j + k * k).sqrt();
-                if (len - 1.0).abs() > Self::NORMAL_TOLERANCE {
-                    return Err(invalid(
-                        "normal",
-                        format!("I, J, K must be a unit vector, length is {len}"),
-                    ));
-                }
-            }
+            (Some(i), Some(j), Some(k)) => check_unit("normal", i, j, k)?,
             _ => return Err(invalid("normal", "I, J and K must be given together")),
         }
         Ok(point)
@@ -416,6 +446,186 @@ impl From<Point> for PointRepr {
     }
 }
 
+/// A normalized direction vector `(i, j, k)`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(try_from = "UnitVectorRepr", into = "UnitVectorRepr")
+)]
+pub struct UnitVector {
+    i: f64,
+    j: f64,
+    k: f64,
+}
+
+impl UnitVector {
+    pub fn new(i: f64, j: f64, k: f64) -> Result<Self> {
+        finite("I", i)?;
+        finite("J", j)?;
+        finite("K", k)?;
+        check_unit("vector", i, j, k)?;
+        Ok(UnitVector { i, j, k })
+    }
+
+    pub fn i(&self) -> f64 {
+        self.i
+    }
+    pub fn j(&self) -> f64 {
+        self.j
+    }
+    pub fn k(&self) -> f64 {
+        self.k
+    }
+}
+
+#[cfg(feature = "serde")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct UnitVectorRepr {
+    i: f64,
+    j: f64,
+    k: f64,
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<UnitVectorRepr> for UnitVector {
+    type Error = IppError;
+
+    fn try_from(r: UnitVectorRepr) -> Result<Self> {
+        Self::new(r.i, r.j, r.k)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl From<UnitVector> for UnitVectorRepr {
+    fn from(v: UnitVector) -> Self {
+        UnitVectorRepr {
+            i: v.i,
+            j: v.j,
+            k: v.k,
+        }
+    }
+}
+
+/// Arguments of `AlignTool` (spec 6.3.2.20): the main tool axis direction
+/// with its maximum allowed error angle, and optionally the secondary
+/// (working plane) direction with its own error angle. An error angle of zero
+/// disables the check.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(try_from = "ToolAlignmentRepr", into = "ToolAlignmentRepr")
+)]
+pub struct ToolAlignment {
+    primary: UnitVector,
+    alpha: f64,
+    secondary: Option<(UnitVector, f64)>,
+}
+
+fn angle(name: &str, v: f64) -> Result<f64> {
+    if v.is_finite() && v >= 0.0 {
+        Ok(v)
+    } else {
+        Err(invalid(
+            name,
+            format!("must be a finite angle of at least 0, got {v}"),
+        ))
+    }
+}
+
+impl ToolAlignment {
+    /// Align the main axis only.
+    pub fn primary(vector: UnitVector, alpha: f64) -> Result<Self> {
+        Ok(ToolAlignment {
+            primary: vector,
+            alpha: angle("alpha", alpha)?,
+            secondary: None,
+        })
+    }
+
+    /// Also align the secondary direction.
+    pub fn with_secondary(self, vector: UnitVector, beta: f64) -> Result<Self> {
+        Ok(ToolAlignment {
+            secondary: Some((vector, angle("beta", beta)?)),
+            ..self
+        })
+    }
+
+    pub fn primary_vector(&self) -> UnitVector {
+        self.primary
+    }
+    pub fn alpha(&self) -> f64 {
+        self.alpha
+    }
+    pub fn secondary(&self) -> Option<(UnitVector, f64)> {
+        self.secondary
+    }
+
+    pub(crate) fn to_args(self) -> Vec<Term> {
+        let n = Term::Number;
+        let mut args = vec![n(self.primary.i), n(self.primary.j), n(self.primary.k)];
+        match self.secondary {
+            None => args.push(n(self.alpha)),
+            Some((v, beta)) => args.extend([n(v.i), n(v.j), n(v.k), n(self.alpha), n(beta)]),
+        }
+        args
+    }
+
+    /// Read `i1,j1,k1,alpha` or `i1,j1,k1,i2,j2,k2,alpha,beta`; `Ok(None)`
+    /// if the terms aren't one of those shapes.
+    pub(crate) fn from_terms(terms: &[Term]) -> Result<Option<Self>> {
+        let nums: Option<Vec<f64>> = terms
+            .iter()
+            .map(|t| match t {
+                Term::Number(v) => Some(*v),
+                _ => None,
+            })
+            .collect();
+        match nums.as_deref() {
+            Some(&[i, j, k, alpha]) => Self::primary(UnitVector::new(i, j, k)?, alpha).map(Some),
+            Some(&[i1, j1, k1, i2, j2, k2, alpha, beta]) => {
+                Self::primary(UnitVector::new(i1, j1, k1)?, alpha)?
+                    .with_secondary(UnitVector::new(i2, j2, k2)?, beta)
+                    .map(Some)
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ToolAlignmentRepr {
+    primary: UnitVector,
+    alpha: f64,
+    secondary: Option<(UnitVector, f64)>,
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<ToolAlignmentRepr> for ToolAlignment {
+    type Error = IppError;
+
+    fn try_from(r: ToolAlignmentRepr) -> Result<Self> {
+        let base = Self::primary(r.primary, r.alpha)?;
+        match r.secondary {
+            Some((v, beta)) => base.with_secondary(v, beta),
+            None => Ok(base),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl From<ToolAlignment> for ToolAlignmentRepr {
+    fn from(a: ToolAlignment) -> Self {
+        ToolAlignmentRepr {
+            primary: a.primary,
+            alpha: a.alpha,
+            secondary: a.secondary,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -455,5 +665,30 @@ mod tests {
         assert!(CoordSystemName::new("a\r\nGoTo(X(1))").is_err());
         assert!(CoordSystemName::new("caf\u{e9}").is_err());
         assert!(CoordSystemName::new("x".repeat(256)).is_err());
+    }
+
+    #[test]
+    fn tool_name_validation() {
+        assert!(ToolName::new("Conf1Tip1").is_ok());
+        assert!(ToolName::new("").is_err());
+        assert!(ToolName::new("T\"1").is_err());
+    }
+
+    #[test]
+    fn tool_alignment_validation_and_shape() {
+        let up = UnitVector::new(0.0, 0.0, 1.0).unwrap();
+        assert!(UnitVector::new(0.0, 0.0, 2.0).is_err());
+        assert!(ToolAlignment::primary(up, -1.0).is_err());
+        assert!(ToolAlignment::primary(up, f64::NAN).is_err());
+        let one = ToolAlignment::primary(up, 5.0).unwrap();
+        assert_eq!(one.to_args().len(), 4);
+        let two = one
+            .with_secondary(UnitVector::new(1.0, 0.0, 0.0).unwrap(), 2.0)
+            .unwrap();
+        assert_eq!(two.to_args().len(), 8);
+        assert_eq!(
+            ToolAlignment::from_terms(&two.to_args()).unwrap(),
+            Some(two)
+        );
     }
 }

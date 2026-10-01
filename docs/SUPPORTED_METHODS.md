@@ -5,7 +5,7 @@ typed [`Command`](../crates/ippdme-core/src/commands.rs) variant in
 `ippdme-core`, versus which are not yet implemented.
 
 Any method without a typed variant can still be sent or parsed losslessly via
-`Command::Raw(Term)` — nothing is blocked by omission, this table just tracks
+`Command::raw(Term)` — nothing is blocked by omission, this table just tracks
 ergonomic/typed coverage. "Implemented" here means: has a `Command` variant,
 round-trips through `Term`, is handled by `IppMockServer`, and (where it makes
 sense standalone) has a TUI preset.
@@ -47,9 +47,15 @@ Legend: ✅ implemented · ⬜ not yet implemented
 | `Get(..)` | ✅ | `Get(Vec<Term>)` |
 | `GoTo(..)` | ✅ | `GoTo(Point)` |
 | `PtMeas(..)` | ✅ | `PtMeas(Point)` |
-| `Tool()` / `FindTool(..)` / `FoundTool()` / `ChangeTool(..)` / `SetTool(..)` / `AlignTool(..)` | ⬜ | tool-changer group, not yet implemented |
-| `GoToPar()` / `PtMeasPar()` | ⬜ | reachable today via `Get`/`SetProp` on the `Tool.GoToPar`/`Tool.PtMeasPar` property paths; no dedicated variant |
-| `EnumTools()` | ⬜ | |
+| `Tool()` | ✅ | `Tool` |
+| `FindTool(..)` | ✅ | `FindTool(ToolName)` |
+| `FoundTool()` | ✅ | `FoundTool` |
+| `ChangeTool(..)` | ✅ | `ChangeTool(ToolName)` |
+| `SetTool(..)` | ✅ | `SetTool(ToolName)` |
+| `AlignTool(..)` | ✅ | `AlignTool(ToolAlignment)` (one or two unit vectors with error angles) |
+| `GoToPar()` | ✅ | `GoToPar` (pointer only; parameters are reached via `Get`/`SetProp` on `Tool.GoToPar`) |
+| `PtMeasPar()` | ✅ | `PtMeasPar` (pointer only; parameters are reached via `Get`/`SetProp` on `Tool.PtMeasPar`) |
+| `EnumTools()` | ✅ | `EnumTools` |
 | `Q()` | ⬜ | |
 | `ER()` | ⬜ | |
 | `GetChangeToolAction(..)` | ⬜ | |
@@ -68,12 +74,12 @@ Legend: ✅ implemented · ⬜ not yet implemented
 | `X()` / `Y()` / `Z()` / `IJK()` (query form) | ✅ (generic) | reachable as bare `Term::unit(..)` args of `Get`/`OnPtMeasReport`/`OnMoveReportE` |
 | `X(..)` / `Y(..)` / `Z(..)` / `IJK(..)` (move form) | ✅ | via `Point` args of `GoTo`/`PtMeas` |
 | `R()` | ⬜ | rotary-table position query; reachable as a raw arg of `Get`, no typed helper yet |
-| `SaveActiveCoordSystem(..)` | ✅ | `SaveActiveCoordSystem(String)` |
-| `LoadCoordSystem(..)` | ✅ | `LoadCoordSystem(String)` |
-| `DeleteCoordSystem(..)` | ✅ | `DeleteCoordSystem(String)` |
+| `SaveActiveCoordSystem(..)` | ✅ | `SaveActiveCoordSystem(CoordSystemName)` |
+| `LoadCoordSystem(..)` | ✅ | `LoadCoordSystem(CoordSystemName)` |
+| `DeleteCoordSystem(..)` | ✅ | `DeleteCoordSystem(CoordSystemName)` |
 | `EnumCoordSystems(..)` | ✅ | `EnumCoordSystems` |
-| `GetNamedCsyTransformation(..)` | ✅ | `GetNamedCsyTransformation(String)` |
-| `SaveNamedCsyTransformation(..)` | ✅ | `SaveNamedCsyTransformation(String, CsyTransform)` |
+| `GetNamedCsyTransformation(..)` | ✅ | `GetNamedCsyTransformation(CoordSystemName)` |
+| `SaveNamedCsyTransformation(..)` | ✅ | `SaveNamedCsyTransformation(CoordSystemName, CsyTransform)` |
 
 > ⚠️ **Known discrepancy:** the existing `SetCoordSystem`/`CoordSystem` enum
 > uses the shorthand identifiers `MCS`/`PCS` (matching the dialog examples in
@@ -116,6 +122,11 @@ the parameterized methods above.
 
 ⬜ Not yet implemented (`CenterPart(..)`, `TiltPart(..)`,
 `TiltCenterPart(..)`, `LockAxis(..)`, `LockPosition(..)`).
+
+## Strict parsing
+
+`Command::try_from(&Term)` returns `IppError::UnknownCommand` for methods not
+listed above; use `Command::from_term_lenient` to get `Command::Raw` instead.
 
 ## Updating this document
 

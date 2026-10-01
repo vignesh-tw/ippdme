@@ -162,6 +162,24 @@ async fn handle_command(tag: Tag, cmd: Command) -> Message {
         }
         Command::SaveNamedCsyTransformation(..) => response::ack(tag),
 
+        Command::Tool
+        | Command::FoundTool
+        | Command::GoToPar
+        | Command::PtMeasPar
+        | Command::FindTool(_)
+        | Command::ChangeTool(_)
+        | Command::SetTool(_) => response::ack(tag),
+        // The mock reaches exactly the alignment it was asked for.
+        Command::AlignTool(alignment) => {
+            let term: Term = Command::AlignTool(alignment).into();
+            response::data(tag, term)
+        }
+        Command::EnumTools => {
+            let names = ["RefTool", "NoTool", "NormalTool"];
+            let args = names.iter().map(|n| Term::Str((*n).into())).collect();
+            response::data(tag, Term::call("EnumTools", args))
+        }
+
         Command::Raw(_) => response::error(tag, "UnknownCommand"),
     }
 }
