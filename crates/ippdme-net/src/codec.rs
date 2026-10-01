@@ -44,6 +44,14 @@ impl Encoder<Message> for MessageCodec {
 
     fn encode(&mut self, item: Message, dst: &mut BytesMut) -> Result<(), NetError> {
         let line = item.to_string();
+        // A CR or LF inside a term (e.g. in a string argument) would end the
+        // line early and smuggle a second command onto the wire.
+        if line.contains(['\r', '\n']) {
+            return Err(NetError::Protocol(ippdme_core::IppError::InvalidArgument {
+                name: "message".into(),
+                reason: "must not contain CR or LF".into(),
+            }));
+        }
         dst.reserve(line.len() + 2);
         dst.put_slice(line.as_bytes());
         dst.put_slice(b"\r\n");
@@ -72,6 +80,21 @@ mod tests {
         let mut codec = MessageCodec;
         let mut buf = BytesMut::from("00001 # A");
         assert!(codec.decode(&mut buf).unwrap().is_none());
+    }
+
+    #[test]
+    fn encode_rejects_line_breaks_inside_a_term() {
+        use ippdme_core::Term;
+        let msg = Message::Command {
+            tag: Tag(1),
+            term: Term::call(
+                "LoadCoordSystem",
+                vec![Term::Str("a\r\n00002 EndSession()".into())],
+            ),
+        };
+        let mut buf = BytesMut::new();
+        assert!(MessageCodec.encode(msg, &mut buf).is_err());
+        assert!(buf.is_empty());
     }
 
     #[test]
