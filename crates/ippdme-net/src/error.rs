@@ -10,6 +10,8 @@ pub enum NetError {
     Timeout(ippdme_core::Tag),
     #[error("connection closed")]
     ConnectionClosed,
+    #[error("TLS error: {0}")]
+    Tls(String),
     #[error("client is shutting down")]
     Shutdown,
 }

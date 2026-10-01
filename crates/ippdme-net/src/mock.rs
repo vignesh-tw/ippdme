@@ -25,6 +25,16 @@ impl IppMockServer {
         Ok(IppMockServer { server })
     }
 
+    /// Like [`IppMockServer::bind`], but serving TLS 1.3 connections.
+    #[cfg(feature = "tls")]
+    pub async fn bind_tls(
+        addr: impl ToSocketAddrs,
+        tls: crate::tls::TlsServerConfig,
+    ) -> Result<Self> {
+        let server = IppServer::bind_tls(addr, MockHandler, tls).await?;
+        Ok(IppMockServer { server })
+    }
+
     /// The actual bound address — useful when binding to port 0 in tests.
     pub fn local_addr(&self) -> Result<SocketAddr> {
         self.server.local_addr()

@@ -24,6 +24,10 @@ jobs:
         run: cargo clippy --workspace --exclude ippdme-py --all-targets -- -D warnings
       - name: Test (workspace, excluding Python extension crate)
         run: cargo test --workspace --exclude ippdme-py
+      - name: Clippy and test ippdme-net with TLS
+        run: |
+          cargo clippy -p ippdme-net --features tls --all-targets -- -D warnings
+          cargo test -p ippdme-net --features tls
 
   cross-compile-arm:
     name: Cross-compile to aarch64-unknown-linux-gnu
@@ -37,9 +41,11 @@ jobs:
       - name: Install aarch64 linker
         run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
       - name: Build ippdme-core and ippdme-net for ARM64
-        run: cargo build -p ippdme-core -p ippdme-net --target aarch64-unknown-linux-gnu
+        run: cargo build -p ippdme-core -p ippdme-net --features ippdme-net/tls --target aarch64-unknown-linux-gnu
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          # ring (TLS) compiles C/asm, so it needs the cross C compiler too.
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
 
   python:
     name: Python bindings (maturin + pytest)

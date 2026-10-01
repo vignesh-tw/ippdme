@@ -41,6 +41,17 @@ impl IppClient {
         Ok(Self::from_stream(stream))
     }
 
+    /// Connect to `addr` over TLS 1.3, verifying the server against `tls`.
+    #[cfg(feature = "tls")]
+    pub async fn connect_tls(
+        addr: impl ToSocketAddrs,
+        tls: &crate::tls::TlsClientConfig,
+    ) -> Result<Self> {
+        let tcp = TcpStream::connect(addr).await?;
+        let stream = tls.connector().connect(tls.server_name(), tcp).await?;
+        Ok(Self::from_stream(stream))
+    }
+
     /// Wrap an already-connected byte stream (a [`TcpStream`], a TLS
     /// stream, an in-memory duplex pipe in tests, ...).
     pub fn from_stream<S>(stream: S) -> Self

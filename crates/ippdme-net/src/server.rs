@@ -42,6 +42,8 @@ where
 pub struct IppServer<H> {
     listener: TcpListener,
     handler: Arc<H>,
+    #[cfg(feature = "tls")]
+    tls: Option<crate::tls::TlsServerConfig>,
 }
 
 impl<H: Handler> IppServer<H> {
@@ -50,7 +52,23 @@ impl<H: Handler> IppServer<H> {
         Ok(IppServer {
             listener,
             handler: Arc::new(handler),
+            #[cfg(feature = "tls")]
+            tls: None,
         })
+    }
+
+    /// Like [`IppServer::bind`], but every accepted connection is upgraded
+    /// to TLS 1.3 (mutual TLS if `tls` was built with a client CA) before
+    /// any I++ traffic is read.
+    #[cfg(feature = "tls")]
+    pub async fn bind_tls(
+        addr: impl ToSocketAddrs,
+        handler: H,
+        tls: crate::tls::TlsServerConfig,
+    ) -> Result<Self> {
+        let mut server = Self::bind(addr, handler).await?;
+        server.tls = Some(tls);
+        Ok(server)
     }
 
     /// The actual bound address — useful when binding to port 0 in tests.
@@ -64,8 +82,20 @@ impl<H: Handler> IppServer<H> {
             let (stream, peer) = self.listener.accept().await?;
             debug!(%peer, "server: accepted connection");
             let handler = self.handler.clone();
+            #[cfg(feature = "tls")]
+            let tls = self.tls.clone();
             tokio::spawn(async move {
-                if let Err(e) = serve_connection(stream, &*handler).await {
+                #[cfg(feature = "tls")]
+                let result = match tls {
+                    Some(tls) => match tls.acceptor().accept(stream).await {
+                        Ok(stream) => serve_connection(stream, &*handler).await,
+                        Err(e) => Err(e.into()),
+                    },
+                    None => serve_connection(stream, &*handler).await,
+                };
+                #[cfg(not(feature = "tls"))]
+                let result = serve_connection(stream, &*handler).await;
+                if let Err(e) = result {
                     warn!(%peer, error = %e, "server: connection ended with error");
                 }
             });
