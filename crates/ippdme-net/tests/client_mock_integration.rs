@@ -89,3 +89,14 @@ async fn client_and_server_work_over_in_memory_duplex() {
     assert!(matches!(reply, Message::Response { .. }));
     assert!(reply.is_ack());
 }
+
+#[tokio::test]
+async fn go_to_rejects_non_finite_coordinates_before_sending() {
+    let (addr, _server) = ippdme_net::mock::spawn_ephemeral().await.unwrap();
+    let client = IppClient::connect(addr).await.unwrap();
+    let err = client.go_to(f64::NAN, 0.0, 0.0).await.unwrap_err();
+    assert!(matches!(
+        err,
+        ippdme_net::NetError::Protocol(ippdme_core::IppError::InvalidArgument { .. })
+    ));
+}

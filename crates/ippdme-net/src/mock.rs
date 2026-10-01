@@ -75,7 +75,9 @@ async fn handle_command(tag: Tag, cmd: Command) -> Message {
         }
         Command::PtMeas(_) => {
             // A real CMM would report the probed coordinates; simulate one.
-            let measured = Point::xyz(10.002, 20.001, 5.000).with_normal(0.0, 0.0, 1.0);
+            let measured = Point::xyz(10.002, 20.001, 5.000)
+                .and_then(|p| p.with_normal(0.0, 0.0, 1.0))
+                .expect("constant point is valid");
             let term: Term = Command::PtMeas(measured).into();
             response::data(tag, term)
         }
@@ -141,12 +143,12 @@ async fn handle_command(tag: Tag, cmd: Command) -> Message {
             let term = Term::Call(
                 "GetCsyTransformation".into(),
                 vec![
-                    Term::Number(identity.x0),
-                    Term::Number(identity.y0),
-                    Term::Number(identity.z0),
-                    Term::Number(identity.theta),
-                    Term::Number(identity.psi),
-                    Term::Number(identity.phi),
+                    Term::Number(identity.x0()),
+                    Term::Number(identity.y0()),
+                    Term::Number(identity.z0()),
+                    Term::Number(identity.theta()),
+                    Term::Number(identity.psi()),
+                    Term::Number(identity.phi()),
                 ],
             );
             response::data(tag, term)

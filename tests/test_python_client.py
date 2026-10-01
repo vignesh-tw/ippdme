@@ -57,3 +57,8 @@ def test_go_to_takes_roughly_the_simulated_latency(ipp_client):
     start = time.monotonic()
     ipp_client.go_to(x=1.0, y=1.0, z=1.0)
     assert time.monotonic() - start >= 0.45
+
+
+def test_go_to_rejects_non_finite_coordinates(ipp_client):
+    with pytest.raises(ValueError):
+        ipp_client.go_to(x=float("nan"), y=0.0, z=0.0)

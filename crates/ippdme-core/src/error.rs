@@ -12,6 +12,8 @@ pub enum IppError {
     MissingArg { func: String, name: String },
     #[error("argument {name:?} for {func:?} has the wrong type")]
     WrongArgType { func: String, name: String },
+    #[error("invalid value for {name:?}: {reason}")]
+    InvalidArgument { name: String, reason: String },
     #[error("unknown command: {0}")]
     UnknownCommand(String),
 }

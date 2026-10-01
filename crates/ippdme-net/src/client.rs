@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
-use ippdme_core::{Command, CoordSystem, Message, Point, Tag, Term};
+use ippdme_core::{Command, CoordSystem, Message, Tag, Term};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpStream, ToSocketAddrs};
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -170,11 +170,11 @@ impl IppClient {
     }
 
     pub async fn go_to(&self, x: f64, y: f64, z: f64) -> Result<Message> {
-        self.send_command(Command::GoTo(Point::xyz(x, y, z))).await
+        self.send_command(Command::go_to(x, y, z)?).await
     }
 
     pub async fn pt_meas(&self) -> Result<Message> {
-        self.send_command(Command::PtMeas(Point::default())).await
+        self.send_command(Command::pt_meas()).await
     }
 
     pub async fn set_coord_system(&self, cs: CoordSystem) -> Result<Message> {

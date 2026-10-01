@@ -42,11 +42,11 @@ pub fn default_presets() -> Vec<PresetCategory> {
                 },
                 Preset {
                     label: "GoTo(10, 10, 10)",
-                    build: || Command::go_to(10.0, 10.0, 10.0),
+                    build: || Command::go_to(10.0, 10.0, 10.0).expect("finite constants"),
                 },
                 Preset {
                     label: "GoTo(0, 0, 0)",
-                    build: || Command::go_to(0.0, 0.0, 0.0),
+                    build: || Command::go_to(0.0, 0.0, 0.0).expect("finite constants"),
                 },
             ],
         },
