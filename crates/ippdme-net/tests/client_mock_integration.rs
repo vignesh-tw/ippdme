@@ -161,3 +161,42 @@ async fn tool_commands_are_handled_by_the_mock() {
         .unwrap();
     assert!(reached.is_data());
 }
+
+#[tokio::test]
+async fn send_line_sends_text_verbatim_and_returns_the_tagged_reply() {
+    let client = connected_client().await;
+
+    let reply = client.send_line("00042 StartSession()").await.unwrap();
+    let reply = reply.expect("a tagged line waits for its reply");
+    assert_eq!(reply.tag(), ippdme_core::Tag(42));
+    assert_eq!(reply.term().name(), Some("Ready"));
+
+    // A well-formed but unknown command: the server answers with an error.
+    let reply = client.send_line("00043 Bogus()").await.unwrap().unwrap();
+    assert!(reply.is_error());
+}
+
+#[tokio::test]
+async fn send_line_without_a_tag_returns_immediately() {
+    let client = connected_client().await;
+
+    // No tag, so there is no reply to wait for. The mock can't parse the
+    // line and ends the connection, so later requests fail.
+    let started = std::time::Instant::now();
+    assert!(client
+        .send_line("hello, are you there?")
+        .await
+        .unwrap()
+        .is_none());
+    assert!(started.elapsed() < std::time::Duration::from_millis(500));
+    assert!(client.get_dme_version().await.is_err());
+}
+
+#[tokio::test]
+async fn send_line_rejects_embedded_line_breaks() {
+    let client = connected_client().await;
+    assert!(client
+        .send_line("00001 Home()\r\n00002 EndSession()")
+        .await
+        .is_err());
+}

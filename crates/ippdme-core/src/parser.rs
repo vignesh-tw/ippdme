@@ -101,6 +101,22 @@ pub fn parse_message(line: &str) -> Result<Message, IppError> {
         })
 }
 
+/// The tag a raw line starts with, if it starts with one: five ASCII digits
+/// followed by whitespace or the end of the line. Lets a caller correlate a
+/// hand-typed line with its reply without fully parsing it.
+pub fn leading_tag(line: &str) -> Option<Tag> {
+    let head = line.get(..5)?;
+    if !head.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    match line[5..].chars().next() {
+        None => {}
+        Some(c) if c.is_whitespace() => {}
+        Some(_) => return None,
+    }
+    head.parse().ok().map(Tag)
+}
+
 /// Parse a bare term (no tag/marker), useful for parsing nested arguments or
 /// testing.
 pub fn parse_term_str(input: &str) -> Result<Term, IppError> {
@@ -112,6 +128,16 @@ pub fn parse_term_str(input: &str) -> Result<Term, IppError> {
 mod tests {
     use super::*;
     use crate::ast::Marker;
+
+    #[test]
+    fn leading_tag_reads_five_digits_then_space_or_end() {
+        assert_eq!(leading_tag("00007 Home()"), Some(Tag(7)));
+        assert_eq!(leading_tag("00007"), Some(Tag(7)));
+        assert_eq!(leading_tag("0007 Home()"), None);
+        assert_eq!(leading_tag("000071 Home()"), None);
+        assert_eq!(leading_tag("Home()"), None);
+        assert_eq!(leading_tag(""), None);
+    }
 
     #[test]
     fn parses_simple_command() {

@@ -39,24 +39,53 @@ impl Decoder for MessageCodec {
     }
 }
 
+/// What a client writes to the wire: a typed message, or a line of text sent
+/// verbatim (for hand-typed or deliberately malformed input).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Outgoing {
+    Message(Message),
+    RawLine(String),
+}
+
+impl From<Message> for Outgoing {
+    fn from(msg: Message) -> Self {
+        Outgoing::Message(msg)
+    }
+}
+
+impl Encoder<Outgoing> for MessageCodec {
+    type Error = NetError;
+
+    fn encode(&mut self, item: Outgoing, dst: &mut BytesMut) -> Result<(), NetError> {
+        match item {
+            Outgoing::Message(msg) => self.encode(msg, dst),
+            Outgoing::RawLine(line) => write_line(line, dst),
+        }
+    }
+}
+
 impl Encoder<Message> for MessageCodec {
     type Error = NetError;
 
     fn encode(&mut self, item: Message, dst: &mut BytesMut) -> Result<(), NetError> {
-        let line = item.to_string();
-        // A CR or LF inside a term (e.g. in a string argument) would end the
-        // line early and smuggle a second command onto the wire.
-        if line.contains(['\r', '\n']) {
-            return Err(NetError::Protocol(ippdme_core::IppError::InvalidArgument {
-                name: "message".into(),
-                reason: "must not contain CR or LF".into(),
-            }));
-        }
-        dst.reserve(line.len() + 2);
-        dst.put_slice(line.as_bytes());
-        dst.put_slice(b"\r\n");
-        Ok(())
+        write_line(item.to_string(), dst)
     }
+}
+
+/// Write `line` plus CRLF. A CR or LF inside `line` (for a typed message,
+/// e.g. in a string argument) would end it early and smuggle a second line
+/// onto the wire, so that is refused.
+fn write_line(line: String, dst: &mut BytesMut) -> Result<(), NetError> {
+    if line.contains(['\r', '\n']) {
+        return Err(NetError::Protocol(ippdme_core::IppError::InvalidArgument {
+            name: "message".into(),
+            reason: "must not contain CR or LF".into(),
+        }));
+    }
+    dst.reserve(line.len() + 2);
+    dst.put_slice(line.as_bytes());
+    dst.put_slice(b"\r\n");
+    Ok(())
 }
 
 #[cfg(test)]
@@ -95,6 +124,17 @@ mod tests {
         let mut buf = BytesMut::new();
         assert!(MessageCodec.encode(msg, &mut buf).is_err());
         assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn raw_lines_are_written_verbatim_but_stay_one_line() {
+        let mut buf = BytesMut::new();
+        let junk = Outgoing::RawLine("not a protocol line (".into());
+        MessageCodec.encode(junk, &mut buf).unwrap();
+        assert_eq!(&buf[..], b"not a protocol line (\r\n");
+
+        let two_lines = Outgoing::RawLine("00001 Home()\r\n00002 EndSession()".into());
+        assert!(MessageCodec.encode(two_lines, &mut buf).is_err());
     }
 
     #[test]

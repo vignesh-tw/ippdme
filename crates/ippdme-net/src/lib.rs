@@ -11,7 +11,7 @@ pub mod tap;
 pub mod tls;
 
 pub use client::{IppClient, DEFAULT_CONNECT_TIMEOUT};
-pub use codec::MessageCodec;
+pub use codec::{MessageCodec, Outgoing};
 pub use error::{NetError, Result};
 pub use mock::{IppMockServer, MockConfig};
 pub use server::{serve_connection, Action, Handler, IppServer};

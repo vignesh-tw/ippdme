@@ -8,14 +8,16 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
-use ippdme_core::{response, Command, CoordSystem, Message, Point, Tag, Term};
+use ippdme_core::{
+    leading_tag, response, Command, CoordSystem, IppError, Message, Point, Tag, Term,
+};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpStream, ToSocketAddrs};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::time::timeout;
 use tokio_util::codec::Framed;
 
-use crate::codec::MessageCodec;
+use crate::codec::{MessageCodec, Outgoing};
 use crate::error::{NetError, Result};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -30,7 +32,7 @@ type PendingMap = Arc<Mutex<HashMap<Tag, oneshot::Sender<Message>>>>;
 /// An async client connection to an I++ DME server (a real CMM/gateway, or
 /// [`crate::mock::IppMockServer`]).
 pub struct IppClient {
-    write_tx: mpsc::UnboundedSender<Message>,
+    write_tx: mpsc::UnboundedSender<Outgoing>,
     pending: PendingMap,
     next_tag: Arc<AtomicU32>,
     closed: Arc<AtomicBool>,
@@ -86,7 +88,7 @@ impl IppClient {
         let framed = Framed::new(stream, MessageCodec);
         let (mut sink, mut stream) = framed.split();
 
-        let (write_tx, mut write_rx) = mpsc::unbounded_channel::<Message>();
+        let (write_tx, mut write_rx) = mpsc::unbounded_channel::<Outgoing>();
         let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
         let (events, _) = broadcast::channel(EVENT_BUFFER);
 
@@ -172,13 +174,56 @@ impl IppClient {
         }
 
         let message = Message::Command { tag, term };
-        if self.write_tx.send(message).is_err() {
+        if self.write_tx.send(message.into()).is_err() {
             self.pending.lock().unwrap().remove(&tag);
             return Err(NetError::ConnectionClosed);
         }
 
         match timeout(self.default_timeout, rx).await {
             Ok(Ok(response)) => Ok(response),
+            Ok(Err(_)) => Err(NetError::ConnectionClosed),
+            Err(_) => {
+                self.pending.lock().unwrap().remove(&tag);
+                Err(NetError::Timeout(tag))
+            }
+        }
+    }
+
+    /// Send a line of text exactly as typed, tag included, like typing into
+    /// `nc`. The line is not parsed or validated, so it can be malformed on
+    /// purpose; it must be a single line (no CR or LF).
+    ///
+    /// If the line starts with a tag (five digits), this waits for the reply
+    /// carrying that tag and returns it. Without a tag nothing can be
+    /// matched to the line, so it returns `Ok(None)` right after sending;
+    /// any reply still arrives through [`IppClient::subscribe`].
+    pub async fn send_line(&self, line: &str) -> Result<Option<Message>> {
+        if line.contains(['\r', '\n']) {
+            return Err(NetError::Protocol(IppError::InvalidArgument {
+                name: "line".into(),
+                reason: "must be a single line without CR or LF".into(),
+            }));
+        }
+        let Some(tag) = leading_tag(line) else {
+            self.write_tx
+                .send(Outgoing::RawLine(line.to_string()))
+                .map_err(|_| NetError::ConnectionClosed)?;
+            return Ok(None);
+        };
+
+        let (tx, rx) = oneshot::channel();
+        self.pending.lock().unwrap().insert(tag, tx);
+        if self.closed.load(Ordering::SeqCst)
+            || self
+                .write_tx
+                .send(Outgoing::RawLine(line.to_string()))
+                .is_err()
+        {
+            self.pending.lock().unwrap().remove(&tag);
+            return Err(NetError::ConnectionClosed);
+        }
+        match timeout(self.default_timeout, rx).await {
+            Ok(Ok(response)) => Ok(Some(response)),
             Ok(Err(_)) => Err(NetError::ConnectionClosed),
             Err(_) => {
                 self.pending.lock().unwrap().remove(&tag);

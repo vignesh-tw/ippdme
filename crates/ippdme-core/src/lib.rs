@@ -14,7 +14,7 @@ pub mod values;
 pub use ast::{Marker, Message, Tag, Term};
 pub use commands::Command;
 pub use error::{IppError, Result};
-pub use parser::{parse_message, parse_term_str};
+pub use parser::{leading_tag, parse_message, parse_term_str};
 pub use values::{
     CoordSystem, CoordSystemName, CsyTransform, CsyTransformKind, Point, ToolAlignment, ToolName,
     UnitVector,
