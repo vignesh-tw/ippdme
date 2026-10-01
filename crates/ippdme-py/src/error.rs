@@ -5,7 +5,9 @@ use pyo3::PyErr;
 
 pub fn to_py_err(e: NetError) -> PyErr {
     match e {
-        NetError::Timeout(_) => PyTimeoutError::new_err(e.to_string()),
+        NetError::Timeout(_) | NetError::ConnectTimeout(_) => {
+            PyTimeoutError::new_err(e.to_string())
+        }
         NetError::ConnectionClosed | NetError::Io(_) | NetError::Shutdown => {
             PyConnectionError::new_err(e.to_string())
         }

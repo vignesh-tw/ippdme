@@ -8,6 +8,8 @@ pub enum NetError {
     Protocol(#[from] ippdme_core::IppError),
     #[error("request timed out waiting for a response to tag {0}")]
     Timeout(ippdme_core::Tag),
+    #[error("timed out connecting after {0:?}")]
+    ConnectTimeout(std::time::Duration),
     #[error("connection closed")]
     ConnectionClosed,
     #[error("TLS error: {0}")]

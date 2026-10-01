@@ -111,3 +111,24 @@ def test_tls_options_are_validated(pki):
         )
     with pytest.raises(ValueError):
         IppMockServer(port=0, cert=pki["localhost"] + ".pem")
+
+
+def test_connect_timeout_on_silent_peer(pki):
+    import socket
+    import time
+
+    silent = socket.socket()
+    silent.bind(("127.0.0.1", 0))
+    silent.listen(1)
+    try:
+        start = time.monotonic()
+        with pytest.raises(TimeoutError):
+            IppClient.connect(
+                f"127.0.0.1:{silent.getsockname()[1]}",
+                ca_cert=pki["ca"] + ".pem",
+                server_name="localhost",
+                connect_timeout=0.3,
+            )
+        assert time.monotonic() - start < 3
+    finally:
+        silent.close()

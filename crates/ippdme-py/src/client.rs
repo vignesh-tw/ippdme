@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
 use ippdme_core::{Command, CoordSystem};
 use ippdme_net::{IppClient, NetError, Result as NetResult, TlsClientConfig, TlsIdentity};
@@ -56,9 +57,10 @@ impl PyIppClient {
     /// 1.3, verifying the server against that CA. `server_name` is the name
     /// the server certificate must match (default: the host part of
     /// `addr`). Supply both `client_cert` and `client_key` (PEM file paths)
-    /// to present a client certificate for mutual TLS.
+    /// to present a client certificate for mutual TLS. `connect_timeout`
+    /// (seconds, default 5) limits the TCP connect plus the TLS handshake.
     #[staticmethod]
-    #[pyo3(signature = (addr, *, ca_cert=None, server_name=None, client_cert=None, client_key=None))]
+    #[pyo3(signature = (addr, *, ca_cert=None, server_name=None, client_cert=None, client_key=None, connect_timeout=5.0))]
     fn connect(
         py: Python<'_>,
         addr: String,
@@ -66,7 +68,10 @@ impl PyIppClient {
         server_name: Option<String>,
         client_cert: Option<String>,
         client_key: Option<String>,
+        connect_timeout: f64,
     ) -> PyResult<Self> {
+        let limit = Duration::try_from_secs_f64(connect_timeout)
+            .map_err(|_| PyValueError::new_err("connect_timeout must be a non-negative number"))?;
         let tls = match ca_cert {
             Some(ca) => {
                 let identity = match (client_cert, client_key) {
@@ -84,7 +89,11 @@ impl PyIppClient {
                 let ca_pem = std::fs::read(&ca)
                     .map_err(NetError::from)
                     .map_err(to_py_err)?;
-                Some(TlsClientConfig::new(&name, &ca_pem, identity.as_ref()).map_err(to_py_err)?)
+                Some(
+                    TlsClientConfig::new(&name, &ca_pem, identity.as_ref())
+                        .map_err(to_py_err)?
+                        .with_connect_timeout(limit),
+                )
             }
             None if server_name.is_some() || client_cert.is_some() || client_key.is_some() => {
                 return Err(PyValueError::new_err(
@@ -98,7 +107,7 @@ impl PyIppClient {
             crate::runtime::runtime().block_on(async move {
                 match tls {
                     Some(tls) => IppClient::connect_tls(addr, &tls).await,
-                    None => IppClient::connect(addr).await,
+                    None => IppClient::connect_timeout(addr, limit).await,
                 }
             })
         })

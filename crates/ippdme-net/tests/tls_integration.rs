@@ -96,3 +96,42 @@ async fn mutual_tls_accepts_known_client_and_rejects_anonymous_one() {
     };
     assert!(rejected);
 }
+
+#[tokio::test]
+async fn tls_connect_to_a_silent_peer_times_out_instead_of_hanging() {
+    // Accepts TCP but never answers the ClientHello, like a machine that
+    // is waiting for a CRLF-terminated I++ line.
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let _held = listener.accept().await;
+        std::future::pending::<()>().await;
+    });
+
+    let ca = Ca::new();
+    let limit = std::time::Duration::from_millis(300);
+    let cfg = TlsClientConfig::new("localhost", &ca.pem(), None)
+        .unwrap()
+        .with_connect_timeout(limit);
+    let started = std::time::Instant::now();
+    match IppClient::connect_tls(addr, &cfg).await {
+        Err(ippdme_net::NetError::ConnectTimeout(d)) => assert_eq!(d, limit),
+        other => panic!("expected ConnectTimeout, got {:?}", other.err()),
+    }
+    assert!(started.elapsed() < std::time::Duration::from_secs(2));
+}
+
+#[tokio::test]
+async fn tls_connect_to_a_plaintext_server_fails() {
+    let plain = IppMockServer::bind(("127.0.0.1", 0)).await.unwrap();
+    let addr = plain.local_addr().unwrap();
+    tokio::spawn(plain.serve());
+
+    let ca = Ca::new();
+    let cfg = TlsClientConfig::new("localhost", &ca.pem(), None)
+        .unwrap()
+        .with_connect_timeout(std::time::Duration::from_secs(2));
+    assert!(IppClient::connect_tls(addr, &cfg).await.is_err());
+}

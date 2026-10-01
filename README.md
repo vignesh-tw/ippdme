@@ -164,6 +164,11 @@ enabled by default in the Python package, the TUI and the imposter.
 - **Imposter:** a top-level `tls:` block in the YAML with `cert`, `key` and an
   optional `client_ca`, or `Imposter::builder().tls(...)` in Rust.
 
+Connecting is bounded: the TCP connect plus TLS handshake must finish within 5s
+(`TlsClientConfig::with_connect_timeout`, `connect_timeout=` in Python), so
+pointing a TLS client at a machine without TLS fails with a timeout or handshake
+error instead of hanging. There is no fallback to plaintext.
+
 A real CMM will not speak TLS itself; put a TLS-terminating proxy in front of
 it and point the client at the proxy.
 

@@ -19,6 +19,10 @@ use crate::codec::MessageCodec;
 use crate::error::{NetError, Result};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How long [`IppClient::connect`] and [`IppClient::connect_tls`] wait for the
+/// TCP connection (and, for TLS, the handshake) by default.
+pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const EVENT_BUFFER: usize = 1024;
 
 type PendingMap = Arc<Mutex<HashMap<Tag, oneshot::Sender<Message>>>>;
@@ -36,20 +40,40 @@ pub struct IppClient {
 
 impl IppClient {
     /// Connect to `addr` (e.g. `"127.0.0.1:1294"`) and spawn the background
-    /// read/write tasks.
+    /// read/write tasks. Gives up after [`DEFAULT_CONNECT_TIMEOUT`].
     pub async fn connect(addr: impl ToSocketAddrs) -> Result<Self> {
-        let stream = TcpStream::connect(addr).await?;
+        Self::connect_timeout(addr, DEFAULT_CONNECT_TIMEOUT).await
+    }
+
+    /// Like [`IppClient::connect`], with an explicit limit on how long the
+    /// TCP connection may take.
+    pub async fn connect_timeout(addr: impl ToSocketAddrs, limit: Duration) -> Result<Self> {
+        let stream = timeout(limit, TcpStream::connect(addr))
+            .await
+            .map_err(|_| NetError::ConnectTimeout(limit))??;
         Ok(Self::from_stream(stream))
     }
 
     /// Connect to `addr` over TLS 1.3, verifying the server against `tls`.
+    ///
+    /// The TCP connect and the TLS handshake together must finish within
+    /// `tls`'s connect timeout (see
+    /// [`TlsClientConfig::with_connect_timeout`](crate::tls::TlsClientConfig::with_connect_timeout)),
+    /// so a peer that doesn't speak TLS fails with
+    /// [`NetError::ConnectTimeout`] instead of hanging.
     #[cfg(feature = "tls")]
     pub async fn connect_tls(
         addr: impl ToSocketAddrs,
         tls: &crate::tls::TlsClientConfig,
     ) -> Result<Self> {
-        let tcp = TcpStream::connect(addr).await?;
-        let stream = tls.connector().connect(tls.server_name(), tcp).await?;
+        let limit = tls.connect_timeout();
+        let connect = async {
+            let tcp = TcpStream::connect(addr).await?;
+            Ok::<_, NetError>(tls.connector().connect(tls.server_name(), tcp).await?)
+        };
+        let stream = timeout(limit, connect)
+            .await
+            .map_err(|_| NetError::ConnectTimeout(limit))??;
         Ok(Self::from_stream(stream))
     }
 

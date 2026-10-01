@@ -9,7 +9,7 @@ pub mod server;
 #[cfg(feature = "tls")]
 pub mod tls;
 
-pub use client::IppClient;
+pub use client::{IppClient, DEFAULT_CONNECT_TIMEOUT};
 pub use codec::MessageCodec;
 pub use error::{NetError, Result};
 pub use mock::{IppMockServer, MockConfig};

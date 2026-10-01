@@ -129,9 +129,19 @@ impl<H: Handler> IppServer<H> {
             tokio::spawn(async move {
                 #[cfg(feature = "tls")]
                 let result = match tls {
-                    Some(tls) => match tls.acceptor().accept(stream).await {
-                        Ok(stream) => serve_connection(stream, &*handler).await,
-                        Err(e) => Err(e.into()),
+                    // A peer that connects but never completes the handshake
+                    // must not hold this task forever.
+                    Some(tls) => match tokio::time::timeout(
+                        crate::tls::DEFAULT_HANDSHAKE_TIMEOUT,
+                        tls.acceptor().accept(stream),
+                    )
+                    .await
+                    {
+                        Ok(Ok(stream)) => serve_connection(stream, &*handler).await,
+                        Ok(Err(e)) => Err(e.into()),
+                        Err(_) => Err(crate::error::NetError::ConnectTimeout(
+                            crate::tls::DEFAULT_HANDSHAKE_TIMEOUT,
+                        )),
                     },
                     None => serve_connection(stream, &*handler).await,
                 };

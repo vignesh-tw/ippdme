@@ -6,6 +6,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
@@ -36,6 +37,10 @@ fn roots(pem: &[u8]) -> Result<RootCertStore> {
     }
     Ok(store)
 }
+
+/// How long a TLS handshake may take before the connection is dropped, on
+/// both the client and the server side by default.
+pub const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A certificate chain and its private key, both PEM-encoded.
 #[derive(Clone)]
@@ -69,6 +74,7 @@ impl TlsIdentity {
 pub struct TlsClientConfig {
     connector: TlsConnector,
     server_name: ServerName<'static>,
+    connect_timeout: Duration,
 }
 
 impl TlsClientConfig {
@@ -92,7 +98,18 @@ impl TlsClientConfig {
         Ok(TlsClientConfig {
             connector: TlsConnector::from(Arc::new(config)),
             server_name,
+            connect_timeout: DEFAULT_HANDSHAKE_TIMEOUT,
         })
+    }
+
+    /// Limit for the TCP connect plus the TLS handshake (default 5s).
+    pub fn with_connect_timeout(mut self, limit: Duration) -> Self {
+        self.connect_timeout = limit;
+        self
+    }
+
+    pub(crate) fn connect_timeout(&self) -> Duration {
+        self.connect_timeout
     }
 
     pub(crate) fn connector(&self) -> &TlsConnector {
