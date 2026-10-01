@@ -8,6 +8,6 @@ pub fn to_py_err(e: NetError) -> PyErr {
         NetError::ConnectionClosed | NetError::Io(_) | NetError::Shutdown => {
             PyConnectionError::new_err(e.to_string())
         }
-        NetError::Protocol(_) => PyConnectionError::new_err(e.to_string()),
+        NetError::Tls(_) | NetError::Protocol(_) => PyConnectionError::new_err(e.to_string()),
     }
 }

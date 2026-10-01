@@ -1,4 +1,5 @@
-use ippdme_net::IppMockServer;
+use ippdme_net::{IppMockServer, NetError, TlsIdentity, TlsServerConfig};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use tokio::task::JoinHandle;
 
@@ -11,15 +12,45 @@ use crate::runtime::runtime;
 #[pyclass(name = "IppMockServer")]
 pub struct PyIppMockServer {
     port: u16,
+    tls: Option<TlsServerConfig>,
     handle: Option<JoinHandle<ippdme_net::Result<()>>>,
 }
 
 #[pymethods]
 impl PyIppMockServer {
+    /// Pass `cert` and `key` (PEM file paths) to serve TLS 1.3 instead of
+    /// plain TCP. Also passing `client_ca` (a PEM file path) requires
+    /// clients to present a certificate signed by that CA (mutual TLS).
     #[new]
-    #[pyo3(signature = (port=1294))]
-    fn new(port: u16) -> Self {
-        PyIppMockServer { port, handle: None }
+    #[pyo3(signature = (port=1294, *, cert=None, key=None, client_ca=None))]
+    fn new(
+        port: u16,
+        cert: Option<String>,
+        key: Option<String>,
+        client_ca: Option<String>,
+    ) -> PyResult<Self> {
+        let tls = match (cert, key) {
+            (Some(cert), Some(key)) => {
+                let identity = TlsIdentity::from_files(cert, key).map_err(to_py_err)?;
+                let client_ca = client_ca
+                    .map(std::fs::read)
+                    .transpose()
+                    .map_err(NetError::from)
+                    .map_err(to_py_err)?;
+                Some(TlsServerConfig::new(&identity, client_ca.as_deref()).map_err(to_py_err)?)
+            }
+            (None, None) if client_ca.is_none() => None,
+            _ => {
+                return Err(PyValueError::new_err(
+                    "TLS needs cert and key together; client_ca requires them",
+                ))
+            }
+        };
+        Ok(PyIppMockServer {
+            port,
+            tls,
+            handle: None,
+        })
     }
 
     /// Bind and start accepting connections on a background Tokio task.
@@ -30,8 +61,16 @@ impl PyIppMockServer {
             return Ok(());
         }
         let port = self.port;
+        let tls = self.tls.clone();
         let server = py
-            .allow_threads(|| runtime().block_on(IppMockServer::bind(("127.0.0.1", port))))
+            .allow_threads(|| {
+                runtime().block_on(async move {
+                    match tls {
+                        Some(tls) => IppMockServer::bind_tls(("127.0.0.1", port), tls).await,
+                        None => IppMockServer::bind(("127.0.0.1", port)).await,
+                    }
+                })
+            })
             .map_err(to_py_err)?;
         self.port = server.local_addr().map_err(to_py_err)?.port();
         self.handle = Some(runtime().spawn(server.serve()));

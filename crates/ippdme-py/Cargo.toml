@@ -12,6 +12,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 ippdme-core = { workspace = true }
-ippdme-net = { workspace = true }
+ippdme-net = { workspace = true, features = ["tls"] }
 pyo3 = { version = "0.22", features = ["extension-module"] }
 tokio = { workspace = true }
