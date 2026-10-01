@@ -3,7 +3,7 @@
 //! inbound message (for live inspection, e.g. the TUI).
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -29,6 +29,7 @@ pub struct IppClient {
     write_tx: mpsc::UnboundedSender<Message>,
     pending: PendingMap,
     next_tag: Arc<AtomicU32>,
+    closed: Arc<AtomicBool>,
     events: broadcast::Sender<Message>,
     default_timeout: Duration,
 }
@@ -73,8 +74,10 @@ impl IppClient {
             }
         });
 
+        let closed = Arc::new(AtomicBool::new(false));
         let pending_reader = pending.clone();
         let events_reader = events.clone();
+        let closed_reader = closed.clone();
         tokio::spawn(async move {
             while let Some(result) = stream.next().await {
                 match result {
@@ -89,12 +92,17 @@ impl IppClient {
                     Err(_) => break,
                 }
             }
+            // The connection is gone: fail everything still waiting now
+            // rather than letting each request run into its timeout.
+            closed_reader.store(true, Ordering::SeqCst);
+            pending_reader.lock().unwrap().clear();
         });
 
         IppClient {
             write_tx,
             pending,
             next_tag: Arc::new(AtomicU32::new(1)),
+            closed,
             events,
             default_timeout: DEFAULT_TIMEOUT,
         }
@@ -132,6 +140,12 @@ impl IppClient {
     pub async fn send_with_tag(&self, tag: Tag, term: Term) -> Result<Message> {
         let (tx, rx) = oneshot::channel();
         self.pending.lock().unwrap().insert(tag, tx);
+        // Checked after inserting: if the reader closed in between, its
+        // final clear may have missed this entry.
+        if self.closed.load(Ordering::SeqCst) {
+            self.pending.lock().unwrap().remove(&tag);
+            return Err(NetError::ConnectionClosed);
+        }
 
         let message = Message::Command { tag, term };
         if self.write_tx.send(message).is_err() {
