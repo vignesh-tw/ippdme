@@ -6,7 +6,7 @@ pub enum ImposterError {
     Io(#[from] std::io::Error),
     #[error("invalid imposter config: {0}")]
     Config(#[from] serde_yaml_ng::Error),
-    #[error("stub response must set exactly one of ack/error/data: {0}")]
+    #[error("stub response must set exactly one of ack/error/data/drop/malformed: {0}")]
     InvalidResponse(String),
     #[error(transparent)]
     Net(#[from] ippdme_net::NetError),

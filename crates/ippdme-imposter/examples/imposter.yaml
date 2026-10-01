@@ -43,3 +43,15 @@ stubs:
       call: StartSession
     responses:
       - ack: Ready
+
+  # Fault injection: a machine that drops off the network mid-command, and
+  # one that emits garbage instead of a protocol line.
+  - predicate:
+      call: IsHomed
+    responses:
+      - drop: true
+
+  - predicate:
+      call: GetMachineClass
+    responses:
+      - malformed: "this is not an I++ line"

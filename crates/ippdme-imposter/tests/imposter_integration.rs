@@ -125,3 +125,57 @@ async fn received_calls_records_what_the_client_sent() {
     assert_eq!(received.len(), 1);
     assert_eq!(received[0].name(), Some("Home"));
 }
+
+#[tokio::test]
+async fn drop_response_closes_the_connection_without_replying() {
+    let imposter = Imposter::builder()
+        .stub(Stub::when(Predicate::call("Home")).responds_with(ResponseSpec::drop_connection()))
+        .bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let (client, _addr) = client_for(imposter).await;
+
+    assert!(matches!(
+        client.home().await,
+        Err(ippdme_net::NetError::ConnectionClosed)
+    ));
+}
+
+#[tokio::test]
+async fn yaml_malformed_response_sends_the_text_verbatim() {
+    use futures::{SinkExt, StreamExt};
+    use tokio_util::codec::{Framed, LinesCodec};
+
+    let yaml = r#"
+port: 0
+stubs:
+  - predicate:
+      call: Home
+    responses:
+      - malformed: "this is not an I++ line"
+"#;
+    let imposter = Imposter::from_yaml_str(yaml).await.unwrap();
+    let addr = imposter.local_addr().unwrap();
+    tokio::spawn(imposter.serve());
+
+    let stream = TcpStream::connect(addr).await.unwrap();
+    let mut lines = Framed::new(stream, LinesCodec::new());
+    lines.send("00001 Home()").await.unwrap();
+    assert_eq!(
+        lines.next().await.unwrap().unwrap(),
+        "this is not an I++ line"
+    );
+}
+
+#[tokio::test]
+async fn yaml_rejects_a_response_with_two_kinds() {
+    let yaml = r#"
+port: 0
+stubs:
+  - predicate:
+      call: Home
+    responses:
+      - { drop: true, error: Oops }
+"#;
+    assert!(Imposter::from_yaml_str(yaml).await.is_err());
+}

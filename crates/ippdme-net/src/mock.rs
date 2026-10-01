@@ -8,7 +8,7 @@ use ippdme_core::{response, Command, CsyTransform, Message, Point, Tag, Term};
 use tokio::net::ToSocketAddrs;
 
 use crate::error::Result;
-use crate::server::IppServer;
+use crate::server::{Action, IppServer};
 
 /// Simulated latency for `GoTo`, approximating real machine movement time.
 const GO_TO_LATENCY: Duration = Duration::from_millis(500);
@@ -49,11 +49,16 @@ impl IppMockServer {
 struct MockHandler;
 
 impl crate::server::Handler for MockHandler {
-    async fn handle(&self, tag: Tag, term: Term) -> Message {
-        match Command::try_from(&term) {
+    type Session = ();
+
+    fn new_session(&self) {}
+
+    async fn handle(&self, _session: &mut (), tag: Tag, term: Term) -> Action {
+        let reply = match Command::try_from(&term) {
             Ok(cmd) => handle_command(tag, cmd).await,
             Err(_) => response::error(tag, "UnknownCommand"),
-        }
+        };
+        Action::Reply(reply)
     }
 }
 

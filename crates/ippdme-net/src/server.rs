@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use futures::{SinkExt, StreamExt};
 use ippdme_core::{Message, Tag, Term};
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, ToSocketAddrs};
 use tokio_util::codec::Framed;
 use tracing::{debug, warn};
@@ -19,21 +19,63 @@ use tracing::{debug, warn};
 use crate::codec::MessageCodec;
 use crate::error::Result;
 
-/// Turns one inbound command into its single response message.
+/// What a [`Handler`] does in answer to one command.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Action {
+    /// Send this message back (the normal case).
+    Reply(Message),
+    /// Send this text as a line verbatim, bypassing serialization. For
+    /// simulating a faulty server that emits garbage.
+    RawLine(String),
+    /// Close the connection without answering.
+    Close,
+}
+
+impl From<Message> for Action {
+    fn from(msg: Message) -> Self {
+        Action::Reply(msg)
+    }
+}
+
+/// Turns inbound commands into [`Action`]s.
 ///
-/// Implemented for any `Fn(Tag, Term) -> impl Future<Output = Message>`
-/// closure, so simple servers don't need a named type.
+/// One `Session` is created per connection and passed mutably to every call
+/// on that connection, so a handler can keep per-connection state (an I++
+/// session is per connection). Stateless handlers use `()`.
+///
+/// Any `Fn(Tag, Term) -> impl Future<Output = Message>` closure is a
+/// stateless handler, so simple servers don't need a named type.
 pub trait Handler: Send + Sync + 'static {
-    fn handle(&self, tag: Tag, term: Term) -> impl Future<Output = Message> + Send;
+    type Session: Send;
+
+    fn new_session(&self) -> Self::Session;
+
+    fn handle(
+        &self,
+        session: &mut Self::Session,
+        tag: Tag,
+        term: Term,
+    ) -> impl Future<Output = Action> + Send;
 }
 
 impl<F, Fut> Handler for F
 where
     F: Fn(Tag, Term) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = Message> + Send,
+    Fut: Future + Send,
+    Fut::Output: Into<Action>,
 {
-    fn handle(&self, tag: Tag, term: Term) -> impl Future<Output = Message> + Send {
-        self(tag, term)
+    type Session = ();
+
+    fn new_session(&self) {}
+
+    fn handle(
+        &self,
+        _session: &mut (),
+        tag: Tag,
+        term: Term,
+    ) -> impl Future<Output = Action> + Send {
+        let fut = self(tag, term);
+        async move { fut.await.into() }
     }
 }
 
@@ -112,6 +154,7 @@ where
     H: Handler,
 {
     let mut framed = Framed::new(stream, MessageCodec);
+    let mut session = handler.new_session();
 
     while let Some(result) = framed.next().await {
         let msg = result?;
@@ -120,9 +163,24 @@ where
             continue;
         };
 
-        let reply = handler.handle(tag, term).await;
-        if framed.send(reply).await.is_err() {
-            break;
+        match handler.handle(&mut session, tag, term).await {
+            Action::Reply(reply) => {
+                if framed.send(reply).await.is_err() {
+                    break;
+                }
+            }
+            Action::RawLine(line) => {
+                let stream = framed.get_mut();
+                let written = async {
+                    stream.write_all(line.as_bytes()).await?;
+                    stream.write_all(b"\r\n").await?;
+                    stream.flush().await
+                };
+                if written.await.is_err() {
+                    break;
+                }
+            }
+            Action::Close => break,
         }
     }
     Ok(())

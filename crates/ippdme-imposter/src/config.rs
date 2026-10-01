@@ -100,8 +100,10 @@ impl PredicateConfig {
     }
 }
 
-/// One entry in a stub's `responses` list. Exactly one of `ack`/`error`/`data`
-/// must be set; `after_ms` optionally delays the reply to simulate machine
+/// One entry in a stub's `responses` list. Exactly one of
+/// `ack`/`error`/`data`/`drop`/`malformed` must be set (`drop: true` closes
+/// the connection without replying, `malformed: "text"` sends that text as
+/// the reply line); `after_ms` optionally delays the reply to simulate machine
 /// latency (e.g. `GoTo`/`Home` movement time).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ResponseConfig {
@@ -112,16 +114,22 @@ pub struct ResponseConfig {
     #[serde(default)]
     pub data: Option<CallShape>,
     #[serde(default)]
+    pub drop: Option<bool>,
+    #[serde(default)]
+    pub malformed: Option<String>,
+    #[serde(default)]
     pub after_ms: u64,
 }
 
 impl ResponseConfig {
     fn into_timed_response(self) -> Result<TimedResponse> {
-        let spec = match (self.ack, self.error, self.data) {
-            (Some(AckValue::Bool(true)), None, None) => ResponseSpec::ack(),
-            (Some(AckValue::Named(name)), None, None) => ResponseSpec::ack_named(name),
-            (None, Some(reason), None) => ResponseSpec::Error(reason),
-            (None, None, Some(call)) => ResponseSpec::Data(call.into()),
+        let spec = match (self.ack, self.error, self.data, self.drop, self.malformed) {
+            (Some(AckValue::Bool(true)), None, None, None, None) => ResponseSpec::ack(),
+            (Some(AckValue::Named(name)), None, None, None, None) => ResponseSpec::ack_named(name),
+            (None, Some(reason), None, None, None) => ResponseSpec::Error(reason),
+            (None, None, Some(call), None, None) => ResponseSpec::Data(call.into()),
+            (None, None, None, Some(true), None) => ResponseSpec::Drop,
+            (None, None, None, None, Some(line)) => ResponseSpec::Malformed(line),
             other => {
                 return Err(ImposterError::InvalidResponse(format!("{other:?}")));
             }

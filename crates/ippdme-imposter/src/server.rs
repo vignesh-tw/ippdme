@@ -5,8 +5,8 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use ippdme_core::{response, Message, Tag, Term};
-use ippdme_net::{Handler, IppServer, TlsServerConfig};
+use ippdme_core::{response, Tag, Term};
+use ippdme_net::{Action, Handler, IppServer, TlsServerConfig};
 use tokio::net::ToSocketAddrs;
 
 use crate::config::ImposterConfig;
@@ -99,7 +99,11 @@ struct StubHandler {
 }
 
 impl Handler for StubHandler {
-    async fn handle(&self, tag: Tag, term: Term) -> Message {
+    type Session = ();
+
+    fn new_session(&self) {}
+
+    async fn handle(&self, _session: &mut (), tag: Tag, term: Term) -> Action {
         self.log.lock().unwrap().push(term.clone());
 
         match self.stubs.iter().find(|stub| stub.matches(&term)) {
@@ -108,9 +112,9 @@ impl Handler for StubHandler {
                 if timed.after_ms > 0 {
                     tokio::time::sleep(std::time::Duration::from_millis(timed.after_ms)).await;
                 }
-                timed.spec.to_message(tag)
+                timed.spec.to_action(tag)
             }
-            None => response::error(tag, "UnknownStub"),
+            None => Action::Reply(response::error(tag, "UnknownStub")),
         }
     }
 }

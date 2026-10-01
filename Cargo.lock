@@ -518,6 +518,7 @@ dependencies = [
 name = "ippdme-imposter"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "ippdme-core",
  "ippdme-net",
  "rcgen",
@@ -525,6 +526,7 @@ dependencies = [
  "serde_yaml_ng",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]

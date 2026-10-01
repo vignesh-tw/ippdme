@@ -1,6 +1,7 @@
 //! What a matched stub sends back.
 
 use ippdme_core::{response, Message, Tag, Term};
+use ippdme_net::Action;
 
 /// The kind of response a stub sends for a matched call.
 #[derive(Debug, Clone, PartialEq)]
@@ -11,6 +12,12 @@ pub enum ResponseSpec {
     Ack(Option<String>),
     Error(String),
     Data(Term),
+    /// Close the connection without replying, like a machine that dropped
+    /// off the network mid-command.
+    Drop,
+    /// Send this text as the reply line verbatim, like a server emitting
+    /// garbage.
+    Malformed(String),
 }
 
 impl ResponseSpec {
@@ -22,8 +29,16 @@ impl ResponseSpec {
         ResponseSpec::Ack(Some(name.into()))
     }
 
-    pub fn to_message(&self, tag: Tag) -> Message {
-        match self {
+    pub fn drop_connection() -> Self {
+        ResponseSpec::Drop
+    }
+
+    pub fn malformed(line: impl Into<String>) -> Self {
+        ResponseSpec::Malformed(line.into())
+    }
+
+    pub fn to_action(&self, tag: Tag) -> Action {
+        let message = match self {
             ResponseSpec::Ack(None) => response::ack(tag),
             ResponseSpec::Ack(Some(name)) => Message::Response {
                 tag,
@@ -32,7 +47,10 @@ impl ResponseSpec {
             },
             ResponseSpec::Error(reason) => response::error(tag, reason.clone()),
             ResponseSpec::Data(term) => response::data(tag, term.clone()),
-        }
+            ResponseSpec::Drop => return Action::Close,
+            ResponseSpec::Malformed(line) => return Action::RawLine(line.clone()),
+        };
+        Action::Reply(message)
     }
 }
 

@@ -13,6 +13,6 @@ pub use client::IppClient;
 pub use codec::MessageCodec;
 pub use error::{NetError, Result};
 pub use mock::IppMockServer;
-pub use server::{serve_connection, Handler, IppServer};
+pub use server::{serve_connection, Action, Handler, IppServer};
 #[cfg(feature = "tls")]
 pub use tls::{TlsClientConfig, TlsIdentity, TlsServerConfig};
