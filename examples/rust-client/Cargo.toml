@@ -1,0 +1,13 @@
+[package]
+name = "ippdme-example-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Example Rust application using ippdme-core and ippdme-net"
+publish = false
+
+[dependencies]
+ippdme-core = { workspace = true }
+ippdme-net = { workspace = true, features = ["tls"] }
+tokio = { workspace = true }

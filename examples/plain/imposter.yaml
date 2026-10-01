@@ -54,6 +54,11 @@ stubs:
 
   # Any PtMeas(...) gets the same measured point back.
   - predicate:
+      call: ChangeTool
+    responses:
+      - ack: true
+
+  - predicate:
       call: PtMeas
     responses:
       - data:

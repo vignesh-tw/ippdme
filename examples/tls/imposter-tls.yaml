@@ -41,6 +41,11 @@ stubs:
         after_ms: 500
 
   - predicate:
+      call: ChangeTool
+    responses:
+      - ack: true
+
+  - predicate:
       call: PtMeas
     responses:
       - data:

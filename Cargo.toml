@@ -6,6 +6,7 @@ members = [
     "crates/ippdme-imposter",
     "crates/ippdme-py",
     "crates/ippdme-tui",
+    "examples/rust-client",
 ]
 
 [workspace.package]
