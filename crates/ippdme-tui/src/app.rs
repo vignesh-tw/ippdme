@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ippdme_core::{leading_tag, parse_term_str, Command, Message, Tag};
-use ippdme_net::{IppClient, IppMockServer, NetError};
+use ippdme_net::{IppClient, IppMockServer, IppTap, NetError, TapDirection, TapEvent};
 
 use crate::tls::TlsOptions;
 use serde::Serialize;
@@ -16,6 +16,9 @@ use crate::presets::{default_presets, flatten, PresetCategory};
 pub enum Mode {
     Client,
     MockServer,
+    /// Sit between a client and a server and show the raw lines crossing
+    /// the port, without taking part in the conversation.
+    Tap,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -46,6 +49,10 @@ pub struct LogEntry {
     pub text: String,
     pub unix_ms: u128,
     pub latency_ms: Option<u128>,
+    /// A line exactly as seen on the wire (tap mode), shown without the
+    /// separate tag column.
+    #[serde(skip)]
+    pub wire: bool,
 }
 
 /// Results reported back to the UI loop from background network tasks.
@@ -64,10 +71,18 @@ pub enum AppEvent {
         handle: tokio::task::JoinHandle<ippdme_net::Result<()>>,
     },
     MockServerFailed(String),
+    TapStarted {
+        port: u16,
+        handle: tokio::task::JoinHandle<ippdme_net::Result<()>>,
+    },
+    TapFailed(String),
+    Tap(TapEvent),
 }
 
 pub struct App {
     pub tls: Option<TlsOptions>,
+    /// The port the tap accepts clients on (tap mode).
+    pub tap_listen: u16,
     pub host: String,
     pub port: String,
     pub mode: Mode,
@@ -98,10 +113,11 @@ pub enum AddrField {
 }
 
 impl App {
-    pub fn new(tls: Option<TlsOptions>) -> Self {
+    pub fn new(tls: Option<TlsOptions>, tap_listen: u16) -> Self {
         let (app_tx, app_rx) = mpsc::unbounded_channel();
         App {
             tls,
+            tap_listen,
             host: "127.0.0.1".to_string(),
             port: "1294".to_string(),
             mode: Mode::Client,
@@ -143,6 +159,7 @@ impl App {
             text,
             unix_ms: Self::now_ms(),
             latency_ms: None,
+            wire: false,
         });
     }
 
@@ -159,6 +176,7 @@ impl App {
             text: format!("<{reason}>"),
             unix_ms: Self::now_ms(),
             latency_ms: None,
+            wire: false,
         });
     }
 
@@ -177,6 +195,7 @@ impl App {
                     text: msg.term().to_string(),
                     unix_ms: Self::now_ms(),
                     latency_ms,
+                    wire: false,
                 });
             }
             Err(e) => {
@@ -187,9 +206,60 @@ impl App {
                     text: format!("<{e}>"),
                     unix_ms: Self::now_ms(),
                     latency_ms,
+                    wire: false,
                 });
             }
         }
+    }
+
+    /// Show something the tap saw, as the exact line that crossed the port.
+    fn push_tap(&mut self, event: TapEvent) {
+        let (direction, marker, tag, text) = match event {
+            TapEvent::Opened { conn, peer } => (
+                Direction::In,
+                None,
+                None,
+                format!("#{conn} opened from {peer}"),
+            ),
+            TapEvent::Closed { conn } => (Direction::In, None, None, format!("#{conn} closed")),
+            TapEvent::Line {
+                conn,
+                direction: TapDirection::ClientToServer,
+                line,
+            } => (
+                Direction::Out,
+                None,
+                leading_tag(&line).map(|t| t.0),
+                format!("#{conn} {line}"),
+            ),
+            TapEvent::Line {
+                conn,
+                direction: TapDirection::ServerToClient,
+                line,
+            } => {
+                // A reply looks like `00001 # Ack()`: the marker is the
+                // second word.
+                let marker = line
+                    .split_whitespace()
+                    .nth(1)
+                    .and_then(|w| w.chars().next().filter(|c| "#!%".contains(*c)));
+                (
+                    Direction::In,
+                    marker,
+                    leading_tag(&line).map(|t| t.0),
+                    format!("#{conn} {line}"),
+                )
+            }
+        };
+        self.log.push(LogEntry {
+            direction,
+            tag,
+            marker,
+            text,
+            unix_ms: Self::now_ms(),
+            latency_ms: None,
+            wire: true,
+        });
     }
 
     pub fn handle_app_event(&mut self, ev: AppEvent) {
@@ -219,6 +289,21 @@ impl App {
                 self.status = format!("Mock server listening on 127.0.0.1:{port}");
                 self.connecting = false;
             }
+            AppEvent::TapStarted { port, handle } => {
+                self.tap_listen = port;
+                self.mock_handle = Some(handle);
+                self.conn = ConnState::Connected;
+                self.connecting = false;
+                self.status = format!(
+                    "Tap on 127.0.0.1:{port}, forwarding to {}: point a client at the tap",
+                    self.addr()
+                );
+            }
+            AppEvent::TapFailed(err) => {
+                self.connecting = false;
+                self.status = format!("Tap failed: {err}");
+            }
+            AppEvent::Tap(event) => self.push_tap(event),
             AppEvent::MockServerFailed(err) => {
                 self.connecting = false;
                 self.status = format!("Mock server failed: {err}");
@@ -233,7 +318,8 @@ impl App {
         }
         self.mode = match self.mode {
             Mode::Client => Mode::MockServer,
-            Mode::MockServer => Mode::Client,
+            Mode::MockServer => Mode::Tap,
+            Mode::Tap => Mode::Client,
         };
     }
 
@@ -269,6 +355,34 @@ impl App {
                         }
                         Err(e) => {
                             let _ = tx.send(AppEvent::ConnectFailed(e.to_string()));
+                        }
+                    }
+                });
+            }
+            Mode::Tap => {
+                let listen = self.tap_listen;
+                let target = self.addr();
+                let tx = self.app_tx.clone();
+                self.status = format!("Starting tap on port {listen}...");
+                tokio::spawn(async move {
+                    match IppTap::bind(("127.0.0.1", listen), target).await {
+                        Ok(tap) => {
+                            let port = tap.local_addr().map_or(listen, |a| a.port());
+                            // Subscribe before serve takes the tap, so no line is missed.
+                            let mut events = tap.subscribe();
+                            let handle = tokio::spawn(tap.serve());
+                            let forward = tx.clone();
+                            tokio::spawn(async move {
+                                while let Ok(event) = events.recv().await {
+                                    if forward.send(AppEvent::Tap(event)).is_err() {
+                                        break;
+                                    }
+                                }
+                            });
+                            let _ = tx.send(AppEvent::TapStarted { port, handle });
+                        }
+                        Err(e) => {
+                            let _ = tx.send(AppEvent::TapFailed(e.to_string()));
                         }
                     }
                 });
@@ -312,7 +426,9 @@ impl App {
     }
 
     fn not_connected_reason(&self) -> &'static str {
-        if self.connecting {
+        if self.mode == Mode::Tap {
+            "Tap mode only watches traffic; press m to switch to Client mode to send"
+        } else if self.connecting {
             "Still connecting — command not sent, try again in a moment"
         } else {
             "Not connected — command not sent"
@@ -386,6 +502,7 @@ impl App {
             text: line.clone(),
             unix_ms: Self::now_ms(),
             latency_ms: None,
+            wire: false,
         });
         self.input.clear();
         let tx = self.app_tx.clone();
@@ -517,7 +634,7 @@ mod tests {
     }
 
     async fn connected_app() -> App {
-        let mut app = App::new(None);
+        let mut app = App::new(None, 0);
         app.mode = Mode::MockServer;
         app.port = "0".to_string();
         app.connect_or_disconnect();
@@ -573,5 +690,60 @@ mod tests {
         .await;
         assert_eq!(app.log[0].tag, Some(1));
         assert_eq!(app.log[0].text, "StartSession()");
+    }
+
+    #[tokio::test]
+    async fn tap_mode_shows_the_lines_crossing_the_port() {
+        // A server for the tap to forward to, and a client going through the tap.
+        let server = IppMockServer::bind(("127.0.0.1", 0)).await.unwrap();
+        let server_port = server.local_addr().unwrap().port();
+        tokio::spawn(server.serve());
+
+        let mut app = App::new(None, 0);
+        app.mode = Mode::Tap;
+        app.host = "127.0.0.1".to_string();
+        app.port = server_port.to_string();
+        app.connect_or_disconnect();
+        tick_until(&mut app, |a| a.conn == ConnState::Connected).await;
+        assert!(app.tap_listen != 0, "tap should report its real port");
+
+        let client = IppClient::connect(("127.0.0.1", app.tap_listen))
+            .await
+            .unwrap();
+        client.start_session().await.unwrap();
+
+        tick_until(&mut app, |a| a.log.iter().filter(|e| e.wire).count() >= 3).await;
+        let lines: Vec<_> = app
+            .log
+            .iter()
+            .map(|e| (e.direction, e.marker, e.text.as_str()))
+            .collect();
+        assert!(lines.iter().any(|l| l.2.starts_with("#1 opened from")));
+        assert!(lines.contains(&(Direction::Out, None, "#1 00001 StartSession()")));
+        assert!(lines.contains(&(Direction::In, Some('#'), "#1 00001 # Ready()")));
+        assert!(app.log.iter().all(|e| e.wire));
+    }
+
+    #[tokio::test]
+    async fn tap_mode_cannot_send_and_says_so() {
+        let mut app = App::new(None, 0);
+        app.mode = Mode::Tap;
+        app.input = "StartSession()".to_string();
+        app.submit_input();
+        assert!(app.status.contains("Tap mode only watches"));
+    }
+
+    #[test]
+    fn m_cycles_through_all_three_modes() {
+        let mut app = App::new(None, 0);
+        let mut seen = vec![app.mode];
+        for _ in 0..3 {
+            app.toggle_mode();
+            seen.push(app.mode);
+        }
+        assert_eq!(
+            seen,
+            [Mode::Client, Mode::MockServer, Mode::Tap, Mode::Client]
+        );
     }
 }

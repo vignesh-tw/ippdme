@@ -40,6 +40,7 @@ fn draw_connection_bar(f: &mut Frame, app: &App, area: Rect) {
     let mode_label = match app.mode {
         Mode::Client => "Client",
         Mode::MockServer => "Mock Server",
+        Mode::Tap => "Tap",
     };
 
     let line = Line::from(vec![
@@ -56,16 +57,19 @@ fn draw_connection_bar(f: &mut Frame, app: &App, area: Rect) {
         Span::raw("   "),
         Span::styled("Target: ", Style::default().fg(Color::Gray)),
         Span::styled(
-            format!(
-                "{}:{}{}",
-                app.host,
-                app.port,
-                if app.tls.is_some() && app.mode == Mode::Client {
-                    " [TLS]"
-                } else {
-                    ""
-                }
-            ),
+            match app.mode {
+                Mode::Tap => format!("127.0.0.1:{} -> {}:{}", app.tap_listen, app.host, app.port),
+                _ => format!(
+                    "{}:{}{}",
+                    app.host,
+                    app.port,
+                    if app.tls.is_some() && app.mode == Mode::Client {
+                        " [TLS]"
+                    } else {
+                        ""
+                    }
+                ),
+            },
             Style::default().add_modifier(Modifier::BOLD),
         ),
         Span::raw("   "),
@@ -145,10 +149,12 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
             if app.selected_log == Some(i) {
                 style = style.add_modifier(Modifier::REVERSED);
             }
-            ListItem::new(Line::from(Span::styled(
-                format!("{arrow} {tag_str} {}{latency}", entry.text),
-                style,
-            )))
+            let text = if entry.wire {
+                format!("{arrow} {}", entry.text)
+            } else {
+                format!("{arrow} {tag_str} {}{latency}", entry.text)
+            };
+            ListItem::new(Line::from(Span::styled(text, style)))
         })
         .collect();
 
@@ -160,7 +166,11 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(border_style)
-        .title(" Live Protocol Stream (blue=out, green=ack, red=error, yellow=data) ");
+        .title(if app.mode == Mode::Tap {
+            " Wire view: lines crossing the port (--> client to server, <-- server to client) "
+        } else {
+            " Live Protocol Stream (blue=out, green=ack, red=error, yellow=data) "
+        });
     f.render_widget(List::new(items).block(block), area);
 }
 

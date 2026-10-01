@@ -1,4 +1,5 @@
 mod app;
+mod cli;
 mod presets;
 mod tls;
 mod ui;
@@ -24,11 +25,11 @@ async fn main() -> Result<()> {
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!("{}", tls::USAGE);
+        println!("{}", cli::USAGE);
         return Ok(());
     }
-    let tls = tls::TlsOptions::from_args(args)
-        .map_err(|e| color_eyre::eyre::eyre!("{e}\n\n{}", tls::USAGE))?;
+    let cli =
+        cli::Cli::from_args(args).map_err(|e| color_eyre::eyre::eyre!("{e}\n\n{}", cli::USAGE))?;
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -36,7 +37,7 @@ async fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run(&mut terminal, tls).await;
+    let result = run(&mut terminal, cli).await;
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -45,11 +46,8 @@ async fn main() -> Result<()> {
     result
 }
 
-async fn run(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    tls: Option<tls::TlsOptions>,
-) -> Result<()> {
-    let mut app = App::new(tls);
+async fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: cli::Cli) -> Result<()> {
+    let mut app = App::new(cli.tls, cli.tap_listen);
     let mut events = EventStream::new();
     let mut tick = tokio::time::interval(Duration::from_millis(100));
 
