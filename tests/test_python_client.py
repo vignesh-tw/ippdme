@@ -62,3 +62,37 @@ def test_go_to_takes_roughly_the_simulated_latency(ipp_client):
 def test_go_to_rejects_non_finite_coordinates(ipp_client):
     with pytest.raises(ValueError):
         ipp_client.go_to(x=float("nan"), y=0.0, z=0.0)
+
+
+def _server(**kwargs):
+    server = IppMockServer(port=0, latency_ms=0, **kwargs)
+    server.start_in_background()
+    return server
+
+
+def test_mock_is_stateful_per_connection():
+    server = _server()
+    try:
+        client = IppClient.connect(f"127.0.0.1:{server.port}")
+        assert "IsHomed(0.0)" in str(client.send_raw("IsHomed()"))
+        client.home()
+        assert "IsHomed(1.0)" in str(client.send_raw("IsHomed()"))
+        client.go_to(x=1.0, y=2.0, z=3.0)
+        assert client.pt_meas().get("X") == pytest.approx(1.0)
+    finally:
+        server.stop()
+
+
+def test_strict_mock_rejects_out_of_order_commands():
+    server = _server(strict=True)
+    try:
+        client = IppClient.connect(f"127.0.0.1:{server.port}")
+        assert client.home().is_error()  # no session yet
+        client.start_session()
+        assert client.home().is_error()  # user not enabled
+        client.send_raw("EnableUser()")
+        assert client.go_to(x=1.0, y=1.0, z=1.0).is_error()  # not homed
+        assert client.home().is_ack()
+        assert client.go_to(x=1.0, y=1.0, z=1.0).is_ack()
+    finally:
+        server.stop()

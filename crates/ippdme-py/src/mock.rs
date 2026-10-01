@@ -1,4 +1,6 @@
-use ippdme_net::{IppMockServer, NetError, TlsIdentity, TlsServerConfig};
+use std::time::Duration;
+
+use ippdme_net::{IppMockServer, MockConfig, NetError, TlsIdentity, TlsServerConfig};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use tokio::task::JoinHandle;
@@ -13,6 +15,7 @@ use crate::runtime::runtime;
 pub struct PyIppMockServer {
     port: u16,
     tls: Option<TlsServerConfig>,
+    config: MockConfig,
     handle: Option<JoinHandle<ippdme_net::Result<()>>>,
 }
 
@@ -21,13 +24,21 @@ impl PyIppMockServer {
     /// Pass `cert` and `key` (PEM file paths) to serve TLS 1.3 instead of
     /// plain TCP. Also passing `client_ca` (a PEM file path) requires
     /// clients to present a certificate signed by that CA (mutual TLS).
+    ///
+    /// `latency_ms` is how long `Home` and `GoTo` take (default 500; use 0
+    /// for fast tests). With `strict=True` the mock rejects commands issued
+    /// out of order: `NoSession` before `StartSession`, `UserNotEnabled`
+    /// before `EnableUser` for motion and measuring, and `NotHomed` before
+    /// `Home` for `GoTo`/`PtMeas`.
     #[new]
-    #[pyo3(signature = (port=1294, *, cert=None, key=None, client_ca=None))]
+    #[pyo3(signature = (port=1294, *, cert=None, key=None, client_ca=None, latency_ms=500, strict=false))]
     fn new(
         port: u16,
         cert: Option<String>,
         key: Option<String>,
         client_ca: Option<String>,
+        latency_ms: u64,
+        strict: bool,
     ) -> PyResult<Self> {
         let tls = match (cert, key) {
             (Some(cert), Some(key)) => {
@@ -46,9 +57,14 @@ impl PyIppMockServer {
                 ))
             }
         };
+        let mut config = MockConfig::default().with_latency(Duration::from_millis(latency_ms));
+        if strict {
+            config = config.strict();
+        }
         Ok(PyIppMockServer {
             port,
             tls,
+            config,
             handle: None,
         })
     }
@@ -62,13 +78,15 @@ impl PyIppMockServer {
         }
         let port = self.port;
         let tls = self.tls.clone();
+        let config = self.config;
         let server = py
             .allow_threads(|| {
                 runtime().block_on(async move {
-                    match tls {
-                        Some(tls) => IppMockServer::bind_tls(("127.0.0.1", port), tls).await,
-                        None => IppMockServer::bind(("127.0.0.1", port)).await,
+                    let mut builder = IppMockServer::builder().config(config);
+                    if let Some(tls) = tls {
+                        builder = builder.tls(tls);
                     }
+                    builder.bind(("127.0.0.1", port)).await
                 })
             })
             .map_err(to_py_err)?;

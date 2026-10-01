@@ -116,6 +116,14 @@ async fn typed_helpers_surface_server_errors() {
 #[tokio::test]
 async fn is_homed_and_user_enabled_parse_flags() {
     let client = connected_client().await;
+    assert!(!client.is_homed().await.unwrap());
+    assert!(!client.is_user_enabled().await.unwrap());
+
+    client.home().await.unwrap();
+    client
+        .send_command(ippdme_core::Command::EnableUser)
+        .await
+        .unwrap();
     assert!(client.is_homed().await.unwrap());
     assert!(client.is_user_enabled().await.unwrap());
 }

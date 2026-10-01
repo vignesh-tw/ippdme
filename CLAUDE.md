@@ -57,11 +57,14 @@ tests/                    Python-level integration tests (pytest) against the mo
   `connect_tls` / `bind_tls`; Python, the TUI and the imposter only wire
   options through to it. Keep it that way: no TLS or socket logic outside
   `ippdme-net`.
-- **`ippdme-net`'s `IppMockServer`** simulates `GoTo`/`Home` latency (500ms
-  sleep) and returns synthetic `PtMeas` coordinates. It's the reference
-  fixture for both Rust integration tests and the Python `ippdme.testing`
-  pytest fixtures — keep its behavior in sync with both test suites if it
-  changes.
+- **`ippdme-net`'s `IppMockServer`** is a small stateful machine simulator.
+  Each connection is its own session (`Handler::Session`) tracking started /
+  homed / user-enabled, position, active coordinate system and tool, and
+  saved coordinate systems. `MockConfig` sets the `Home`/`GoTo` latency
+  (default 500ms, `MockConfig::instant()` for tests) and `strict` call-order
+  enforcement (off by default). It's the reference fixture for both Rust
+  integration tests and the Python `ippdme.testing` pytest fixtures — keep
+  its behavior in sync with both test suites if it changes.
 - **`ippdme-imposter` keeps `serde` out of `ippdme-core` on purpose.** Its
   `config.rs` defines its own YAML-facing `CallShape`/`ArgValue` types (with
   `#[derive(Deserialize)]`) and converts them into `ippdme_core::Term` via
@@ -72,7 +75,8 @@ tests/                    Python-level integration tests (pytest) against the mo
   (`Stub::when(...).responds_with(...)`) and the YAML loader
   (`Imposter::from_yaml_*`) both build the same `Stub`/`Predicate`/
   `ResponseSpec` runtime types, so there's one schema, not two to keep in
-  sync. A stub's `responses` list cycles per match and sticks on the last
+  sync. A stub's `responses` list (which can also `drop` the connection or send a
+  `malformed` line, for fault injection) cycles per match and sticks on the last
   entry once exhausted (`Stub::next_response`) — use this for "fails once,
   then succeeds" scenarios. `serve(self)` consumes the `Imposter`; grab
   `Imposter::handle()` first if the caller needs `received_calls()` after
