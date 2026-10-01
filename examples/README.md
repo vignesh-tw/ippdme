@@ -205,3 +205,19 @@ The YAML files are the starting point for your own machine:
 is "when this call arrives, reply like this". `after_ms` adds delay,
 `responses` lists replay in order, and `drop` / `malformed` inject faults.
 Every YAML under `examples/` is parsed by a test, so they stay valid.
+
+## How these examples are kept working
+
+They are tested, so a code change that breaks one fails CI:
+
+- `examples/rust-client/tests/examples.rs` starts each imposter and checks the
+  `nc` session, the fault table, the Rust client's output and the TLS / mutual
+  TLS setup against this README.
+- `crates/ippdme-net/tests/tap_cli.rs` runs `ippdme-tap` and compares its output
+  with the transcript in step 3.
+- `crates/ippdme-imposter/tests/examples.rs` parses every YAML under `examples/`.
+- `examples/python/run-all.sh` runs the Python clients against the TLS and plain
+  imposters; CI runs it.
+
+If you change a reply or an output format, update the README text the tests
+quote.

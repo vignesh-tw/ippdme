@@ -69,3 +69,7 @@ jobs:
         run: |
           source .venv/bin/activate
           pytest tests/
+      - name: Run the Python examples against the example imposters
+        run: |
+          source .venv/bin/activate
+          examples/python/run-all.sh
