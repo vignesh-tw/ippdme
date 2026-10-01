@@ -33,12 +33,19 @@ ippdme/
 ├── pyproject.toml                # Maturin build configuration for PyPI
 ├── crates/
 │   ├── ippdme-core/               # Protocol parser, AST, serializer
-│   ├── ippdme-net/                # Async Tokio TCP client & mock server
+│   ├── ippdme-net/                # Async Tokio client, server transport, mock server, wire tap
 │   ├── ippdme-imposter/           # Mountebank-style YAML stub server
 │   ├── ippdme-py/                 # PyO3 bindings for Python
 │   └── ippdme-tui/                # Ratatui terminal UI
+├── examples/                      # Run-it-yourself walkthrough: imposters, TLS, Python and Rust clients
 └── python/ippdme/                 # Python package source (mixed maturin layout)
 ```
+
+## Try it
+
+[`examples/`](examples/README.md) is a hands-on walkthrough on one PC: start a
+virtual CMM from a YAML file, talk to it with `nc`, Python, Rust or the TUI,
+watch the traffic on the port, inject faults, and try TLS and mutual TLS.
 
 ## Rust
 
@@ -103,6 +110,16 @@ external hardware or a separate mock-server process:
 6. Press `e` at any time to export the session transcript to a timestamped
    `.log` and `.json` file in the current directory.
 7. Press `c` again to disconnect, `q` or `Esc` to quit.
+
+### Raw line input and Tap mode
+
+Press `r` to make the input box send whole lines exactly as typed, tag
+included and unparsed, like typing into `nc`. Press `m` until the mode reads
+**Tap** to watch the raw lines crossing a port between any client and server
+(clients connect to `--tap-listen`, default 1297; the connection bar's host and
+port are where it forwards to). The same tap is available without the UI as
+`cargo run -p ippdme-net --bin ippdme-tap -- --target 127.0.0.1:1294`.
+[`examples/`](examples/README.md) walks through both.
 
 ### Connect to a real CMM or gateway
 

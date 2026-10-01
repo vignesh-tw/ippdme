@@ -22,10 +22,11 @@ It's a 5-crate Cargo workspace that ships as four things:
 
 ```
 crates/ippdme-core/       Protocol AST (Term/Message), winnow parser, Display serializer, typed Command wrappers
-crates/ippdme-net/        Tokio async IppClient + IppMockServer, built on ippdme-core
+crates/ippdme-net/        Tokio async IppClient, IppServer transport, IppMockServer, IppTap (wire tap), built on ippdme-core
 crates/ippdme-imposter/   Mountebank-style stub server (predicate -> response sequence), YAML or Rust builder config
 crates/ippdme-py/         PyO3 bindings (crate name `_ippdme`, imported as ippdme._ippdme)
 crates/ippdme-tui/        Ratatui terminal UI
+examples/                 Runnable walkthrough (imposter YAMLs, TLS certs script, Python and Rust clients); every YAML is parsed by a test
 python/ippdme/            Python package source (mixed maturin layout: __init__.py, testing.py, py.typed)
 tests/                    Python-level integration tests (pytest) against the mock server
 ```
@@ -57,6 +58,11 @@ tests/                    Python-level integration tests (pytest) against the mo
   `connect_tls` / `bind_tls`; Python, the TUI and the imposter only wire
   options through to it. Keep it that way: no TLS or socket logic outside
   `ippdme-net`.
+- **`IppTap`** (`tap.rs`, plus the `ippdme-tap` binary and the TUI's Tap
+  mode) is a transparent TCP proxy that forwards bytes unchanged and
+  broadcasts each line seen per direction: the outside-the-app view of the
+  port. Plain TCP only. `IppClient::send_line` sends a hand-typed line
+  verbatim (the TUI's raw-line mode).
 - **`ippdme-net`'s `IppMockServer`** is a small stateful machine simulator.
   Each connection is its own session (`Handler::Session`) tracking started /
   homed / user-enabled, position, active coordinate system and tool, and
