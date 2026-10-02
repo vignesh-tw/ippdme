@@ -21,11 +21,15 @@ Every `Command` variant SHALL convert into a `Term`, and `Command::try_from(&Ter
 - **THEN** the result is `Command::Raw` wrapping that term
 
 ### Requirement: Typed coverage of the supported I++ DME methods
-`Command` SHALL provide typed variants for `StartSession`, `EndSession`, `GetDMEVersion`, `Home`, `GoTo`, `PtMeas`, `SetCoordSystem`, and the bare stubs `OnMoveArc` and `ScanOnCircle`.
+`Command` SHALL provide typed variants for `StartSession`, `EndSession`, `GetDMEVersion`, `Home`, `GoTo`, `PtMeas`, `SetCoordSystem` and the bare stubs `OnMoveArc` and `ScanOnCircle`, plus the server methods (`StopDaemon`, `StopAllDaemons`, `AbortE`, `GetErrorInfo`, `ClearAllErrors`, `GetProp`, `GetPropE`, `SetProp`, `EnumProp`, `EnumAllProp`) and the DME status methods (`IsHomed`, `EnableUser`, `DisableUser`, `IsUserEnabled`, `GetMachineClass`, `GetErrStatusE`, `GetXtdErrStatus`, `Get`, `OnPtMeasReport`, `OnMoveReportE`). Variable-shape methods SHALL carry their arguments as raw terms.
 
 #### Scenario: Round trip
 - **WHEN** `Command::StartSession` is converted to a term and back
 - **THEN** the result is `Command::StartSession`
+
+#### Scenario: Property path round trip
+- **WHEN** `GetProp(Tool.PtMeasPar.Speed())` is parsed into a command and serialized
+- **THEN** the original term is reproduced
 
 ### Requirement: Points carry optional coordinates and a normal
 A `Point` SHALL hold optional `X`, `Y`, `Z` and optional surface normal components `I`, `J`, `K`, serialized only for the components that are set. `Command::pt_meas()` SHALL build a `PtMeas` with no arguments.
