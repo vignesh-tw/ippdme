@@ -2,7 +2,7 @@
 
 ## Purpose
 
-A Mountebank-style stub server for headless, automated testing (`ippdme-imposter`). A stub pairs a predicate with a sequence of responses; the imposter replays them to any I++ DME client, configured from YAML or from Rust.
+A Mountebank-style stub server for headless, automated testing (`ippdme-imposter`). A stub pairs a predicate with a sequence of responses; the imposter replays them to any I++ DME client. It can be configured from YAML (no Rust needed) or from a Rust builder, and both build the same runtime `Stub`/`Predicate`/`ResponseSpec` types so there is one schema. It runs as the `ippdme-imposter` binary or as a library.
 
 ## Requirements
 
@@ -29,11 +29,19 @@ A stub's `responses` list SHALL be played in order, one entry per match. Once ex
 - **THEN** the replies are the error, then an ack, then an ack again
 
 ### Requirement: Response kinds
-Each response entry SHALL be exactly one of: `ack` (`true` for `Ack()`, or a name such as `Ready` for `Ready()` under the ack marker), `error: Reason` (an `Error(Reason)` reply) or `data` (a data response built from a call shape). An optional `after_ms` SHALL delay the reply to simulate machine latency. An entry that sets none or more than one kind SHALL be rejected when the config is loaded.
+Each response entry SHALL be exactly one of: `ack` (`true` for `Ack()`, or a name such as `Ready` for `Ready()` under the ack marker), `error: Reason` (an `Error(Reason)` reply), `data` (a data response built from a call shape), `drop: true` (close the connection without replying), or `malformed: "text"` (send that text as the reply line verbatim). An entry that sets none or more than one SHALL be rejected when the config is loaded. An optional `after_ms` SHALL delay the reply to simulate machine latency.
 
 #### Scenario: Named ack
 - **WHEN** a response is `ack: Ready`
 - **THEN** the reply is `00001 # Ready()`
+
+#### Scenario: Drop
+- **WHEN** a response is `drop: true`
+- **THEN** the connection closes with no reply
+
+#### Scenario: Malformed
+- **WHEN** a response is `malformed: "garbage"`
+- **THEN** the client receives the line `garbage`
 
 #### Scenario: Delay
 - **WHEN** a response has `after_ms: 500`

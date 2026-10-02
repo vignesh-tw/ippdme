@@ -2,12 +2,16 @@
 
 ## Purpose
 
-The single accept/frame/dispatch loop behind the I++ DME servers in this repo (`IppServer` in `ippdme-net`, `server.rs`). The mock server and the imposter are handlers on top of it.
+The single accept/frame/dispatch loop behind every I++ DME server in this repo (`IppServer` in `ippdme-net`, `server.rs`). The mock server and the imposter are handlers on top of it; no other crate owns a listener or framing code.
 
 ## Requirements
 
-### Requirement: One handler per server
-`IppServer` SHALL accept TCP connections, frame each with the line codec, and hand every inbound command to a `Handler`, which returns exactly one response message. Connections SHALL be served concurrently on separate tasks.
+### Requirement: One handler per server, one session per connection
+`IppServer` SHALL accept TCP connections, frame each with the line codec, and hand every inbound command to a `Handler`. Each connection SHALL get its own `Session` value from `Handler::new_session`, passed mutably to every call on that connection, so handlers can keep per-connection state. Connections SHALL be served concurrently on separate tasks.
+
+#### Scenario: State is per connection
+- **WHEN** one client changes session state and a second client connects
+- **THEN** the second connection starts from a fresh session
 
 #### Scenario: Concurrent clients
 - **WHEN** two clients are connected
@@ -40,3 +44,14 @@ An error on one connection SHALL be logged and end only that connection; the ser
 #### Scenario: Garbage from one client
 - **WHEN** one client sends an unparseable line
 - **THEN** that connection ends and other clients are unaffected
+
+### Requirement: A handler chooses how to answer
+A handler SHALL answer each command with an action: reply with a message, send a raw text line verbatim (bypassing serialization, for simulating a faulty server), or close the connection without answering.
+
+#### Scenario: Close action
+- **WHEN** a handler returns the close action
+- **THEN** the client's connection ends without a reply
+
+#### Scenario: Raw line action
+- **WHEN** a handler returns a raw line
+- **THEN** that text followed by CRLF is written to the client unchanged
