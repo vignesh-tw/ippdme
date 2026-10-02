@@ -51,3 +51,10 @@ The client SHALL provide helpers for `start_session`, `end_session`, `get_dme_ve
 #### Scenario: Typed value
 - **WHEN** `pt_meas` is answered with `PtMeas(X(1), Y(2), Z(3), ...)`
 - **THEN** it returns the point (1, 2, 3)
+
+### Requirement: Closed connections fail pending requests immediately
+When the connection closes or the reader hits a decode error, every request still waiting SHALL fail with a connection-closed error right away instead of running into its timeout. A request started after the connection closed SHALL also fail with connection-closed.
+
+#### Scenario: Server drops mid-command
+- **WHEN** the server closes the connection while a command is awaiting its reply
+- **THEN** the call fails promptly with a connection-closed error
