@@ -88,3 +88,14 @@ Every outbound command SHALL be logged with its real tag before its reply arrive
 #### Scenario: Half an identity
 - **WHEN** `--client-cert c.pem` is given without `--client-key`
 - **THEN** startup fails with an error
+
+### Requirement: Raw line input
+`r` SHALL toggle raw line mode. In raw line mode, Enter SHALL send the whole input exactly as typed, tag included and unparsed, so it can be malformed on purpose, like typing into `nc`. If the line starts with a tag the reply SHALL be awaited and logged; without a tag the status SHALL say a line was sent without waiting for a reply.
+
+#### Scenario: Raw tagged line
+- **WHEN** raw mode is on and `00042 Home()` is submitted
+- **THEN** that exact line is sent and the reply tagged `00042` is logged
+
+#### Scenario: Raw untagged line
+- **WHEN** raw mode is on and `garbage` is submitted
+- **THEN** it is sent and the status reports that no reply is awaited
