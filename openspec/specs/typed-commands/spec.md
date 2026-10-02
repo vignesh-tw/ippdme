@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Ergonomic Rust wrappers over the generic wire model: a `Command` enum with `From<Command> for Term` / `TryFrom<&Term>`, and builders for server responses. Implemented in `ippdme-core` (`commands.rs`, `response.rs`). The AST stays the source of truth; typed commands are sugar over it.
+Ergonomic, validated Rust types on top of the generic wire model: a `Command` enum, validated argument types, and the response helpers used to build and read replies. Implemented in `ippdme-core` (`commands.rs`, `values.rs`, `response.rs`). The AST stays the source of truth; typed commands are sugar over it. Which I++ DME methods have a typed variant is tracked in `docs/SUPPORTED_METHODS.md`.
 
 ## Requirements
 
@@ -14,15 +14,15 @@ Every `Command` variant SHALL convert into a `Term`, and `Command::try_from(&Ter
 - **THEN** the result equals the original command
 
 ### Requirement: Typed coverage of the supported I++ DME methods
-`Command` SHALL provide typed variants for `StartSession`, `EndSession`, `GetDMEVersion`, `Home`, `GoTo`, `PtMeas`, `SetCoordSystem` and the bare stubs `OnMoveArc` and `ScanOnCircle`, plus the server methods (`StopDaemon`, `StopAllDaemons`, `AbortE`, `GetErrorInfo`, `ClearAllErrors`, `GetProp`, `GetPropE`, `SetProp`, `EnumProp`, `EnumAllProp`), the DME status methods (`IsHomed`, `EnableUser`, `DisableUser`, `IsUserEnabled`, `GetMachineClass`, `GetErrStatusE`, `GetXtdErrStatus`, `Get`, `OnPtMeasReport`, `OnMoveReportE`) and the CartCMM coordinate-system methods (`GetCoordSystem`, `GetCsyTransformation`, `SetCsyTransformation`, `SaveActiveCoordSystem`, `LoadCoordSystem`, `DeleteCoordSystem`, `EnumCoordSystems`, `GetNamedCsyTransformation`, `SaveNamedCsyTransformation`). Variable-shape methods SHALL carry their arguments as raw terms. `docs/SUPPORTED_METHODS.md` SHALL track which spec methods have typed variants.
-
-#### Scenario: Round trip
-- **WHEN** `Command::StartSession` is converted to a term and back
-- **THEN** the result is `Command::StartSession`
+`Command` SHALL provide typed variants for the server methods (session, daemons, errors, properties, version), the DME methods (homing, user enable, machine class, error status, `Get`, `GoTo`, `PtMeas`, report subscriptions, tool handling including `AlignTool` and `EnumTools`), and the CartCMM coordinate-system methods (get/set coordinate system, get/set transformations, save/load/delete/enumerate named coordinate systems) as listed in `docs/SUPPORTED_METHODS.md`. Variable-shape methods (`GetProp`, `SetProp`, `Get`, `OnPtMeasReport`, and similar) SHALL carry their arguments as raw terms.
 
 #### Scenario: Property path round trip
 - **WHEN** `GetProp(Tool.PtMeasPar.Speed())` is parsed into a command and serialized
 - **THEN** the original term is reproduced
+
+#### Scenario: Round trip
+- **WHEN** `Command::StartSession` is converted to a term and back
+- **THEN** the result is `Command::StartSession`
 
 ### Requirement: Coordinate-system and transformation arguments
 `SetCoordSystem` SHALL accept the identifiers `MCS` and `PCS`. `GetCsyTransformation` and `SetCsyTransformation` SHALL accept the kinds `PartCsy`, `JogDisplayCsy`, `JogMoveCsy`, `SensorCsy`, `MoveableMachineCsy` and `MultipleArmCsy`. A transformation SHALL be the six finite numbers `X0, Y0, Z0, Theta, Psi, Phi`.
@@ -100,7 +100,7 @@ A `Point` SHALL hold optional `X`, `Y`, `Z` and an optional surface normal `I`, 
 - **THEN** it is `PtMeas()` with no arguments
 
 ### Requirement: Names are validated for the wire
-Coordinate-system names SHALL be non-empty, at most 255 characters, printable ASCII (letters, digits, punctuation and space) and SHALL NOT contain a double quote, because the wire format has no string escaping. These checks SHALL apply to names built in code and names parsed from the wire.
+Coordinate-system names and tool names SHALL be non-empty, at most 255 characters, printable ASCII (letters, digits, punctuation and space) and SHALL NOT contain a double quote, because the wire format has no string escaping. These checks SHALL apply to names built in code and names parsed from the wire.
 
 #### Scenario: Quote in a name
 - **WHEN** a coordinate-system name containing `"` is constructed
@@ -109,3 +109,14 @@ Coordinate-system names SHALL be non-empty, at most 255 characters, printable AS
 #### Scenario: Empty or over-long name
 - **WHEN** a name is empty or longer than 255 characters
 - **THEN** it is rejected
+
+### Requirement: AlignTool takes one or two direction vectors
+`AlignTool` SHALL take either a primary unit vector with a maximum error angle `alpha`, or a primary and a secondary unit vector with error angles `alpha` and `beta`. Vectors SHALL be unit vectors within tolerance. Any other argument shape SHALL be rejected.
+
+#### Scenario: One vector
+- **WHEN** `AlignTool(0, 0, 1, 0.5)` is parsed and serialized
+- **THEN** it round-trips
+
+#### Scenario: Bad shape
+- **WHEN** `AlignTool` is given three arguments
+- **THEN** parsing fails
