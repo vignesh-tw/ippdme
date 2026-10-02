@@ -77,3 +77,10 @@ When the connection closes or the reader hits a decode error, every request stil
 #### Scenario: Embedded newline
 - **WHEN** `send_line("00001 Home()\r\n00002 Home()")` is called
 - **THEN** it fails with an invalid-argument error and nothing is sent
+
+### Requirement: Dropping the client closes the connection
+Dropping an `IppClient` SHALL stop its reader task and close its half of the socket, so the server sees the connection end instead of it leaking until the server hangs up.
+
+#### Scenario: Client dropped
+- **WHEN** the client value goes out of scope
+- **THEN** the server observes end-of-stream on that connection
