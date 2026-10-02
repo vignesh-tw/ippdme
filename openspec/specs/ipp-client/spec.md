@@ -34,20 +34,20 @@ Waiting for a reply SHALL time out after 5 seconds by default, configurable with
 - **WHEN** a subscriber exists and a command is answered
 - **THEN** the subscriber receives the reply message
 
-### Requirement: Helpers over common commands
-The client SHALL provide helpers for `start_session`, `end_session`, `get_dme_version`, `home`, `go_to`, `pt_meas` and `set_coord_system`, and `send_command` for any typed command. Each SHALL return the raw reply message, whatever its marker. A helper given invalid arguments (such as a non-finite coordinate) SHALL fail with an invalid-argument error without sending anything.
-
-#### Scenario: Error reply is a value
-- **WHEN** a helper is answered with `Error(UnknownCommand)`
-- **THEN** the helper returns that reply message rather than failing
-
-#### Scenario: Invalid argument
-- **WHEN** `go_to` is called with a NaN coordinate
-- **THEN** it fails with an invalid-argument error and nothing is sent
-
 ### Requirement: Tags can be allocated before sending
 `allocate_tag()` SHALL reserve the next tag without sending anything, and `send_with_tag(tag, term)` SHALL send using a reserved tag. `send` SHALL be exactly an allocation followed by `send_with_tag`. This lets a caller (such as the TUI) log the outbound message with its real tag before awaiting the reply.
 
 #### Scenario: Log before reply
 - **WHEN** a caller allocates a tag, records it, then calls `send_with_tag`
 - **THEN** the reply carries the recorded tag
+
+### Requirement: Typed helpers over common commands
+The client SHALL provide helpers for `start_session`, `end_session`, `get_dme_version`, `home`, `go_to`, `pt_meas`, `set_coord_system`, `is_homed` and `is_user_enabled`. Helpers returning nothing SHALL require an ack-marker reply. Helpers returning a value SHALL parse the data reply into a typed value (version string, point, flag). A server `Error(...)` reply SHALL surface as a protocol error carrying the server's reason. `send_command` SHALL return the raw reply message for callers who want to inspect errors themselves.
+
+#### Scenario: Server error from a helper
+- **WHEN** `go_to` is answered with `Error(NotHomed)`
+- **THEN** the helper fails with a server error whose reason is `NotHomed`
+
+#### Scenario: Typed value
+- **WHEN** `pt_meas` is answered with `PtMeas(X(1), Y(2), Z(3), ...)`
+- **THEN** it returns the point (1, 2, 3)
