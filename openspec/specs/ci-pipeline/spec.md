@@ -2,7 +2,7 @@
 
 ## Purpose
 
-What CI guarantees on every push to `main` and every pull request (`.github/workflows/ci.yml`), and the licensing of the workspace.
+What CI guarantees on every push to `main` and every pull request (`.github/workflows/ci.yml`), and how the workspace builds and ships.
 
 ## Requirements
 
@@ -21,7 +21,11 @@ CI SHALL build `ippdme-core` and `ippdme-net` with TLS for `aarch64-unknown-linu
 - **THEN** the cross-compile job fails
 
 ### Requirement: Python bindings are built and tested
-CI SHALL create a virtualenv with `uv venv`, install `maturin` and `pytest`, run `maturin develop -m crates/ippdme-py/Cargo.toml` (which refuses to run without an active virtualenv) and run `pytest tests/`.
+CI SHALL create a virtualenv with `uv venv`, install `maturin` and `pytest`, run `maturin develop -m crates/ippdme-py/Cargo.toml` (which refuses to run without an active virtualenv), run `pytest tests/`, and then run `examples/python/run-all.sh`.
+
+#### Scenario: Python example breaks
+- **WHEN** a binding change breaks `examples/python/plain_client.py`
+- **THEN** the Python job fails
 
 #### Scenario: Binding change breaks tests
 - **WHEN** a binding change breaks a Python test

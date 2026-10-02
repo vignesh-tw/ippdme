@@ -2,7 +2,7 @@
 
 ## Purpose
 
-A hands-on walkthrough under `examples/` that runs on one PC over `127.0.0.1`: virtual CMMs from YAML and clients that talk to them.
+A hands-on walkthrough under `examples/` that runs on one PC over `127.0.0.1`: virtual CMMs from YAML, clients in `nc`, Python and Rust, the tap, fault injection and TLS. The examples are tested so they cannot go stale.
 
 ## Requirements
 
@@ -39,7 +39,7 @@ The repository SHALL ship `examples/plain/imposter.yaml` (a well-behaved machine
 - **THEN** it completes without error
 
 ### Requirement: Examples are executable tests
-Every example YAML SHALL be parsed and started by a Rust test (`examples/rust-client/tests/examples.rs`) on an ephemeral port by rewriting only its `port:` line, and the behavior `examples/README.md` promises SHALL be asserted.
+Every example YAML SHALL be parsed and started by a Rust test (`examples/rust-client/tests/examples.rs`) on an ephemeral port by rewriting only its `port:` line, and the behavior `examples/README.md` promises SHALL be asserted. `examples/python/run-all.sh` SHALL start the plain, TLS and mTLS imposters, wait for their ports, run the Python clients, and stop the imposters.
 
 #### Scenario: Stale example
 - **WHEN** a code change makes an example YAML invalid or its documented reply wrong
