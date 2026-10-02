@@ -100,6 +100,24 @@ tests/                    Python-level integration tests (pytest) against the mo
   async action; blocking the select loop on a network call will freeze
   keystrokes and redraws.
 
+## Spec-driven development (OpenSpec)
+
+Behavior is specified under `openspec/specs/<capability>/spec.md` (one per
+capability: wire format, typed commands, client, mock server, imposter, TUI,
+...). For anything that changes observable behavior, propose first, then build:
+
+```
+/opsx:propose "<idea>"   # openspec/changes/<name>/ with proposal, spec deltas, design, tasks
+/opsx:apply              # implement the tasks
+/opsx:archive            # merge the deltas into openspec/specs/ when done
+```
+
+Check the specs with `openspec validate --specs --strict`. Project context and
+rules for the generated artifacts live in `openspec/config.yaml`. The specs were
+written retrospectively from the code and tests, so when a spec and the code
+disagree, treat it as a bug in one of them and settle it in a change, not by
+silently editing either.
+
 ## Build, test, lint
 
 Run these before considering any change done:

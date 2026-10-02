@@ -1,0 +1,30 @@
+schema: spec-driven
+
+context: |
+  ippdme is an open-source I++ DME (CMM protocol) implementation: a Cargo workspace
+  of ippdme-core (pure, no I/O), ippdme-net (all transport), ippdme-imposter,
+  ippdme-py (PyO3) and ippdme-tui. docs/ippdme_standard.pdf is the protocol
+  reference; consult it only for specific questions, never read it wholesale.
+  CLAUDE.md holds architecture notes and build commands.
+
+  Constraints:
+  - ippdme-core stays I/O-free and serde-free by default; typed commands are sugar
+    over the generic Term/Message AST (add a Command variant plus From/TryFrom, not a
+    new AST node).
+  - All TLS and socket code lives in ippdme-net; other crates only pass options through.
+  - Network calls in the TUI are spawned, never awaited in the event loop.
+  - Changing IppMockServer behavior must update both the Rust and the Python
+    (tests/, ippdme.testing) suites.
+  - Adding a Command variant must update docs/SUPPORTED_METHODS.md in the same change.
+  - Every change must pass: cargo fmt --all -- --check; cargo clippy --workspace
+    --exclude ippdme-py --all-targets -- -D warnings; cargo test --workspace
+    --exclude ippdme-py. ippdme-py is built with maturin, not plain cargo.
+  - No unsafe code. Commit messages: short, imperative, one line plus body when needed.
+    Do NOT add AI-attribution footers to commits or PRs in this project.
+
+rules:
+  specs:
+    - Describe observable behavior (wire output, errors, exit codes), not internal structure.
+    - Reference I++ DME spec sections (e.g. 6.3.2.20) when a requirement comes from the standard.
+  tasks:
+    - Include the fmt, clippy and test commands from the project context as the final task.
