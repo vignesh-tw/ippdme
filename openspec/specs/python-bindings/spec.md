@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The `ippdme` Python package (PyO3 crate `ippdme-py`, imported as `ippdme._ippdme`) for QA/CI pipelines and data scientists: a synchronous client, an embeddable mock server, a response wrapper and pytest fixtures. Built with Maturin.
+The `ippdme` Python package (PyO3 crate `ippdme-py`, imported as `ippdme._ippdme`): a synchronous client, an embeddable mock server and a response wrapper. Built with Maturin.
 
 ## Requirements
 
@@ -39,18 +39,22 @@ A `Response` SHALL provide `is_ack()`, `is_error()`, `is_data()`, a `tag`, the t
 - **THEN** `response.get("X")` is 10.002 and `response.name` is `"PtMeas"`
 
 ### Requirement: Python exceptions map from network errors
-A request timeout SHALL raise `TimeoutError`. A closed connection, I/O error, shutdown or protocol error SHALL raise `ConnectionError`.
+A request timeout SHALL raise `TimeoutError`. A closed connection, I/O error, shutdown, TLS error or protocol error SHALL raise `ConnectionError`.
 
 #### Scenario: Connection refused
 - **WHEN** `IppClient.connect` targets a closed port
 - **THEN** `ConnectionError` is raised
 
 ### Requirement: Embedded mock server
-`IppMockServer(port=1294)` SHALL wrap the mock server. `start_in_background()` SHALL bind `127.0.0.1` and return immediately, doing nothing if already started. `port` SHALL report the real bound port, resolving port 0 to the ephemeral port once started. `stop()` SHALL abort the server, and dropping the object SHALL stop it.
+`IppMockServer(port=1294, *, cert=None, key=None, client_ca=None)` SHALL wrap the mock server. `start_in_background()` SHALL bind `127.0.0.1` and return immediately, doing nothing if already started. `port` SHALL report the real bound port, resolving port 0 to the ephemeral port once started. `stop()` SHALL abort the server, and dropping the object SHALL stop it. `cert` and `key` SHALL be given together and enable TLS, `client_ca` requires them and enables mutual TLS, and any other combination SHALL raise `ValueError`.
 
 #### Scenario: Ephemeral port
 - **WHEN** `IppMockServer(port=0)` is started
 - **THEN** `server.port` is the non-zero port actually bound
+
+#### Scenario: client_ca alone
+- **WHEN** `IppMockServer(client_ca="ca.pem")` is created
+- **THEN** `ValueError` is raised
 
 ### Requirement: Pytest fixtures
 `ippdme.testing` SHALL provide a `mock_server` fixture (an embedded mock on an ephemeral port, stopped at teardown) and an `ipp_client` fixture (connected to `mock_server` with a session already started and ended at teardown), enabled via `pytest_plugins = ["ippdme.testing"]`.
@@ -58,3 +62,14 @@ A request timeout SHALL raise `TimeoutError`. A closed connection, I/O error, sh
 #### Scenario: Using the fixture
 - **WHEN** a test takes `ipp_client` and calls `go_to(x=10.0, y=20.0, z=5.0)`
 - **THEN** the response `is_ack()`
+
+### Requirement: Client TLS options
+Passing `ca_cert` (PEM path) SHALL switch the connection to TLS 1.3. `server_name` SHALL default to the host part of the address, with IPv6 brackets stripped. `client_cert` and `client_key` SHALL be given together to present a client certificate. Supplying `server_name`, `client_cert` or `client_key` without `ca_cert`, or only one of the certificate pair, SHALL raise `ValueError`.
+
+#### Scenario: Half an identity
+- **WHEN** `client_cert` is given without `client_key`
+- **THEN** `ValueError` is raised
+
+#### Scenario: Options without TLS
+- **WHEN** `server_name` is given without `ca_cert`
+- **THEN** `ValueError` is raised
