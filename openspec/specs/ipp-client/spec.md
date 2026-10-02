@@ -7,7 +7,7 @@ The async Tokio client for talking to an I++ DME server: tag allocation, request
 ## Requirements
 
 ### Requirement: Connecting over TCP
-`IppClient::connect(addr)` SHALL open a TCP connection and spawn background read and write tasks. `IppClient::from_stream` SHALL wrap an already-connected `TcpStream`.
+`IppClient::connect(addr)` SHALL open a TCP connection and spawn background read and write tasks. `IppClient::from_stream` SHALL wrap any already-connected `AsyncRead + AsyncWrite` stream (TCP, TLS, in-memory pipe).
 
 #### Scenario: Connected
 - **WHEN** a mock server is listening
