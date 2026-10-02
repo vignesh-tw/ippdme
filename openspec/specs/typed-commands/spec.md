@@ -21,7 +21,7 @@ Every `Command` variant SHALL convert into a `Term`, and `Command::try_from(&Ter
 - **THEN** the result is `Command::Raw` wrapping that term
 
 ### Requirement: Typed coverage of the supported I++ DME methods
-`Command` SHALL provide typed variants for `StartSession`, `EndSession`, `GetDMEVersion`, `Home`, `GoTo`, `PtMeas`, `SetCoordSystem` and the bare stubs `OnMoveArc` and `ScanOnCircle`, plus the server methods (`StopDaemon`, `StopAllDaemons`, `AbortE`, `GetErrorInfo`, `ClearAllErrors`, `GetProp`, `GetPropE`, `SetProp`, `EnumProp`, `EnumAllProp`) and the DME status methods (`IsHomed`, `EnableUser`, `DisableUser`, `IsUserEnabled`, `GetMachineClass`, `GetErrStatusE`, `GetXtdErrStatus`, `Get`, `OnPtMeasReport`, `OnMoveReportE`). Variable-shape methods SHALL carry their arguments as raw terms.
+`Command` SHALL provide typed variants for `StartSession`, `EndSession`, `GetDMEVersion`, `Home`, `GoTo`, `PtMeas`, `SetCoordSystem` and the bare stubs `OnMoveArc` and `ScanOnCircle`, plus the server methods (`StopDaemon`, `StopAllDaemons`, `AbortE`, `GetErrorInfo`, `ClearAllErrors`, `GetProp`, `GetPropE`, `SetProp`, `EnumProp`, `EnumAllProp`), the DME status methods (`IsHomed`, `EnableUser`, `DisableUser`, `IsUserEnabled`, `GetMachineClass`, `GetErrStatusE`, `GetXtdErrStatus`, `Get`, `OnPtMeasReport`, `OnMoveReportE`) and the CartCMM coordinate-system methods (`GetCoordSystem`, `GetCsyTransformation`, `SetCsyTransformation`, `SaveActiveCoordSystem`, `LoadCoordSystem`, `DeleteCoordSystem`, `EnumCoordSystems`, `GetNamedCsyTransformation`, `SaveNamedCsyTransformation`). Variable-shape methods SHALL carry their arguments as raw terms. `docs/SUPPORTED_METHODS.md` SHALL track which spec methods have typed variants.
 
 #### Scenario: Round trip
 - **WHEN** `Command::StartSession` is converted to a term and back
@@ -39,10 +39,10 @@ A `Point` SHALL hold optional `X`, `Y`, `Z` and optional surface normal componen
 - **THEN** it is `PtMeas()` with no arguments
 
 ### Requirement: Coordinate-system and transformation arguments
-`SetCoordSystem` SHALL accept the identifiers `MCS` and `PCS` and reject any other argument.
+`SetCoordSystem` SHALL accept the identifiers `MCS` and `PCS`. `GetCsyTransformation` and `SetCsyTransformation` SHALL accept the kinds `PartCsy`, `JogDisplayCsy`, `JogMoveCsy`, `SensorCsy`, `MoveableMachineCsy` and `MultipleArmCsy`. A transformation SHALL be the six numbers `X0, Y0, Z0, Theta, Psi, Phi`. Named coordinate systems SHALL be addressed by a quoted string name.
 
 #### Scenario: Unknown coordinate system
-- **WHEN** `SetCoordSystem(XYZ)` is converted
+- **WHEN** `SetCoordSystem(XYZ)` is parsed
 - **THEN** it fails with a wrong-argument-type error
 
 ### Requirement: Response builders and readers
