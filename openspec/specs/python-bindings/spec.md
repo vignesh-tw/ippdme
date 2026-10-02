@@ -21,15 +21,19 @@ The package SHALL export `IppClient`, `IppMockServer` and `Response` from `ippdm
 - **THEN** all three names import
 
 ### Requirement: Client methods return raw responses
-`IppClient.connect(addr)` SHALL return a connected client. Its methods `start_session`, `end_session`, `get_dme_version`, `home`, `go_to(x, y, z)`, `pt_meas`, `set_coord_system("MCS"|"PCS")` and `send_raw(term)` SHALL return a `Response` for whatever the server answered (ack, data or error), so tests can assert on error replies without exceptions. `set_coord_system` SHALL accept the name case-insensitively and raise `ValueError` for anything else. `send_raw` SHALL parse a bare term string and raise `ValueError` if it does not parse.
+`IppClient.connect(addr, ...)` SHALL return a connected client. Its methods `start_session`, `end_session`, `get_dme_version`, `home`, `go_to(x, y, z)`, `pt_meas`, `set_coord_system("MCS"|"PCS")` and `send_raw(term)` SHALL return a `Response` for whatever the server answered (ack, data or error), so tests can assert on error replies without exceptions. `set_coord_system` SHALL accept the name case-insensitively and raise `ValueError` for anything else. `send_raw` SHALL parse a bare term string and raise `ValueError` if it does not parse. `go_to` SHALL raise `ValueError` for non-finite values.
 
 #### Scenario: Error reply is a value
-- **WHEN** an unknown command is sent with `send_raw`
-- **THEN** the call returns a `Response` with `is_error()` true and a `reason`
+- **WHEN** a strict mock server is asked to `go_to` before homing
+- **THEN** the call returns a `Response` with `is_error()` true and `reason == "NotHomed"`
 
 #### Scenario: Bad coordinate system
 - **WHEN** `set_coord_system("XYZ")` is called
 - **THEN** `ValueError` is raised
+
+#### Scenario: Raw term
+- **WHEN** `send_raw("GetMachineClass()")` is called
+- **THEN** the reply is returned as a `Response`
 
 ### Requirement: Response accessors
 A `Response` SHALL provide `is_ack()`, `is_error()`, `is_data()`, a `tag`, the top-level term `name`, `get(param)` for a numeric parameter (such as `X` in `PtMeas`), `get_ident(param)` for a nested identifier parameter, and `reason` for the first bare identifier argument (such as `UnknownCommand` in `Error(UnknownCommand)`). Missing values SHALL be `None`. `str()` SHALL give the wire text and `repr()` SHALL be `Response(<wire text>)`.
@@ -39,7 +43,7 @@ A `Response` SHALL provide `is_ack()`, `is_error()`, `is_data()`, a `tag`, the t
 - **THEN** `response.get("X")` is 10.002 and `response.name` is `"PtMeas"`
 
 ### Requirement: Python exceptions map from network errors
-A request timeout SHALL raise `TimeoutError`. A closed connection, I/O error, shutdown, TLS error or protocol error SHALL raise `ConnectionError`.
+A request timeout SHALL raise `TimeoutError`. Invalid arguments SHALL raise `ValueError`. A closed connection, I/O error, shutdown, TLS error or other protocol error SHALL raise `ConnectionError`.
 
 #### Scenario: Connection refused
 - **WHEN** `IppClient.connect` targets a closed port
