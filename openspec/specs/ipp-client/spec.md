@@ -6,8 +6,12 @@ The async Tokio client for talking to an I++ DME server: tag allocation, request
 
 ## Requirements
 
-### Requirement: Connecting over TCP
-`IppClient::connect(addr)` SHALL open a TCP connection and spawn background read and write tasks. `IppClient::from_stream` SHALL wrap any already-connected `AsyncRead + AsyncWrite` stream (TCP, TLS, in-memory pipe).
+### Requirement: Connecting is bounded in time
+`IppClient::connect` SHALL give up after 5 seconds by default, and `connect_timeout` SHALL allow an explicit limit. On expiry it SHALL fail with a connect-timeout error rather than hang. `IppClient::from_stream` SHALL wrap any already-connected `AsyncRead + AsyncWrite` stream (TCP, TLS, in-memory pipe).
+
+#### Scenario: Unreachable address
+- **WHEN** connecting to an address that never accepts within the limit
+- **THEN** the call fails with a connect-timeout error naming the limit
 
 #### Scenario: Connected
 - **WHEN** a mock server is listening

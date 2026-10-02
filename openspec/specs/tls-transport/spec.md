@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Optional TLS 1.3 (and mutual TLS) around the I++ DME protocol, implemented in `ippdme-net` behind the `tls` feature (`tls.rs`, rustls + ring).
+Optional TLS 1.3 (and mutual TLS) around the I++ DME protocol. Standard I++ DME is plaintext TCP; TLS is an add-on for protecting traffic through a TLS-terminating proxy or an imposter. All TLS and socket logic lives in `ippdme-net` behind the `tls` feature (`tls.rs`, rustls + ring). The Python package, the TUI and the imposter only pass options through to it.
 
 ## Requirements
 
@@ -51,3 +51,10 @@ Python SHALL expose TLS as `IppClient.connect(addr, ca_cert=, server_name=, clie
 #### Scenario: Round trip across surfaces
 - **WHEN** an imposter serves TLS from YAML and a Python client connects with the CA
 - **THEN** commands are answered
+
+### Requirement: Handshakes are bounded
+The client's TCP connect plus TLS handshake SHALL together finish within 5 seconds by default, configurable with `with_connect_timeout`, failing with a connect-timeout error. The server SHALL drop a connection whose handshake does not complete within 5 seconds so a silent peer cannot hold a task forever.
+
+#### Scenario: Silent peer on the server
+- **WHEN** a peer connects to a TLS server and sends nothing
+- **THEN** the server ends that connection after the handshake timeout
